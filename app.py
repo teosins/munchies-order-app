@@ -43,8 +43,7 @@ def vcell(ws, r, c, val, font=None, fill=None, fmt=None, align='left', bold=Fals
 
 # ── sidebar ───────────────────────────────────────────────────
 with st.sidebar:
-    st.image("https://munchiescannabis.ca/wp-content/uploads/2023/01/munchies-logo.png",
-             use_container_width=True)
+    st.markdown("## 🌿 Munchies Cannabis")
     st.markdown("---")
     st.header("📁 Upload Files")
     kova_file = st.file_uploader("Kova Reorder Report (.xlsx)", type="xlsx", key="kova")
@@ -240,7 +239,7 @@ def color_days(val):
     except: pass
     return ''
 
-styled = show.style.applymap(color_tier, subset=['Tier']).applymap(color_days, subset=['Days Left'])
+styled = show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left'])
 st.dataframe(styled, hide_index=True, use_container_width=True, height=500)
 
 if not deferred_df.empty:
