@@ -133,22 +133,59 @@ if not kova_file or not ocs_file:
     """)
     st.stop()
 
-# ── process data ──────────────────────────────────────────────
-@st.cache_data(show_spinner="Processing your data...")
-def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax):
+tab1, tab2 = st.tabs(["📦 Replenishment Order", "🗂️ Menu Builder"])
+
+# ── shared data loading ────────────────────────────────────────
+@st.cache_data(show_spinner="Loading catalogue...")
+def load_raw(kova_bytes, ocs_bytes):
+    import re
     kova = pd.read_excel(io.BytesIO(kova_bytes), sheet_name='Reorder')
     ocs  = pd.read_excel(io.BytesIO(ocs_bytes),  sheet_name='MasterCatalogue')
-
     kova_ocs = kova[kova['Supplier'] == 'OCS'].copy()
     kova_ocs['Supplier Sku'] = kova_ocs['Supplier Sku'].str.strip()
     ocs['OCS Variant Number'] = ocs['OCS Variant Number'].str.strip()
-
-    ocs_cols = ['OCS Variant Number','OCS Item Number','Unit Price','Pack Size','Stock Status']
+    ocs_cols = ['OCS Variant Number','OCS Item Number','Unit Price','Pack Size','Stock Status','Plant Type']
     merged = kova_ocs.merge(ocs[ocs_cols], left_on='Supplier Sku', right_on='OCS Variant Number', how='left')
 
+    def extract_size(sku):
+        m = re.search(r'_(\d+\.?\d*[gG])_', str(sku))
+        return m.group(1).lower() if m else None
+
+    def map_strain(row):
+        # try Plant Type first
+        pt = str(row.get('Plant Type', '') or '').lower()
+        if 'indica' in pt:  return 'Indica'
+        if 'sativa' in pt:  return 'Sativa'
+        if 'hybrid' in pt:  return 'Hybrid'
+        if 'blend'  in pt:  return 'Blend'
+        # fallback: product name
+        name = str(row.get('Product', '') or '').lower()
+        for token in ['- indica', 'indica -', '(indica)']:
+            if token in name: return 'Indica'
+        for token in ['- sativa', 'sativa -', '(sativa)']:
+            if token in name: return 'Sativa'
+        for token in ['- hybrid', 'hybrid -', '(hybrid)']:
+            if token in name: return 'Hybrid'
+        for token in ['- blend', 'blend -', '(blend)']:
+            if token in name: return 'Blend'
+        return 'Unknown'
+
+    merged['Flower Size'] = merged.apply(
+        lambda r: extract_size(r['Supplier Sku']) if r['Classification'] == 'Flower' else None, axis=1)
+    merged['Strain'] = merged.apply(map_strain, axis=1)
+    merged['Pack Size']  = pd.to_numeric(merged['Pack Size'],  errors='coerce').fillna(1).astype(int)
+    merged['Unit Price'] = pd.to_numeric(merged['Unit Price'], errors='coerce')
+    return merged, ocs
+
+kova_bytes_raw = kova_file.read()
+ocs_bytes_raw  = ocs_file.read()
+merged_raw, ocs_df = load_raw(kova_bytes_raw, ocs_bytes_raw)
+
+# ── process data ──────────────────────────────────────────────
+@st.cache_data(show_spinner="Processing your data...")
+def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax):
+    merged = load_raw(kova_bytes, ocs_bytes)[0]
     active = merged[merged['Sales (30 Days)'] > 0].copy()
-    active['Pack Size']  = pd.to_numeric(active['Pack Size'],  errors='coerce').fillna(1).astype(int)
-    active['Unit Price'] = pd.to_numeric(active['Unit Price'], errors='coerce')
     active['Weekly Vel'] = (active['Sales (30 Days)'] / 4).round(2)
     active['Daily Vel']  = active['Sales (30 Days)'] / 30
     active['Days Left']  = active['Days of Stock Left (30 Days)'].round(1)
@@ -160,13 +197,6 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax):
         elif w >= 1: return 'C'
         else:        return 'D'
     active['Tier'] = active['Weekly Vel'].apply(assign_tier)
-
-    import re
-    def extract_flower_size(sku):
-        m = re.search(r'_(\d+\.?\d*[gG])_', str(sku))
-        return m.group(1).lower() if m else None
-    active['Flower Size'] = active.apply(
-        lambda r: extract_flower_size(r['Supplier Sku']) if r['Classification'] == 'Flower' else None, axis=1)
 
     def calc_order(row):
         tier = row['Tier']; pack = int(row['Pack Size'])
@@ -215,15 +245,14 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax):
 
     return order_df, deferred_df, all_active
 
-kova_bytes = kova_file.read()
-ocs_bytes  = ocs_file.read()
-order_df, deferred_df, all_active = process(kova_bytes, ocs_bytes, TARGET, FLOWER_SIZE_TARGET, budget_pretax)
+order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax)
 
 if order_df.empty:
     st.warning("No items need ordering based on current stock levels and settings.")
     st.stop()
 
-pretax_total = order_df['Est Cost'].sum()
+with tab1:
+ pretax_total = order_df['Est Cost'].sum()
 tax_amount_actual = pretax_total * tax_rate
 total        = pretax_total + tax_amount_actual
 tax_label    = f"Tax ({tax_rate*100:.3g}%)"
@@ -489,27 +518,213 @@ def build_upload(order_df):
     buf.seek(0)
     return buf
 
-st.markdown("### Download Files")
-dl1, dl2 = st.columns(2)
+ st.markdown("### Download Files")
+ dl1, dl2 = st.columns(2)
+ today = date.today()
+ with dl1:
+     workbook_buf = build_workbook(order_df, deferred_df, all_active, budget_pretax, TARGET, today, tax_rate)
+     st.download_button(
+         label="📥 Download Order Workbook (.xlsx)",
+         data=workbook_buf,
+         file_name=f'OCS_Order_Tool_{today.strftime("%Y%m%d")}.xlsx',
+         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+         use_container_width=True,
+     )
+ with dl2:
+     upload_buf = build_upload(order_df)
+     st.download_button(
+         label="📤 Download OCS Upload File (.xlsx)",
+         data=upload_buf,
+         file_name=f'OCS_Upload_{today.strftime("%Y%m%d")}.xlsx',
+         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+         use_container_width=True,
+     )
 
-today = date.today()
+# ══════════════════════════════════════════════════════════════
+# TAB 2: MENU BUILDER
+# ══════════════════════════════════════════════════════════════
+with tab2:
+    st.markdown("### 🗂️ Menu Builder")
+    st.caption("Set how many SKUs you want on your shelf per category and strain type. The tool shows your gaps and suggests what to order.")
 
-with dl1:
-    workbook_buf = build_workbook(order_df, deferred_df, all_active, budget_pretax, TARGET, today, tax_rate)
-    st.download_button(
-        label="📥 Download Order Workbook (.xlsx)",
-        data=workbook_buf,
-        file_name=f'OCS_Order_Tool_{today.strftime("%Y%m%d")}.xlsx',
-        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        use_container_width=True,
-    )
+    today2 = date.today()
+    STRAINS  = ['Indica','Sativa','Hybrid','Blend']
+    FL_SIZES = ['1g','3.5g','5g','7g','14g','28g','30g']
+    NON_FLOWER_CATS = ['Pre-Roll','Vapes','Edibles','Concentrates','Beverages','Capsules','Oil','Topicals','Seeds']
 
-with dl2:
-    upload_buf = build_upload(order_df)
-    st.download_button(
-        label="📤 Download OCS Upload File (.xlsx)",
-        data=upload_buf,
-        file_name=f'OCS_Upload_{today.strftime("%Y%m%d")}.xlsx',
-        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        use_container_width=True,
-    )
+    # ── target settings ───────────────────────────────────────
+    st.markdown("#### Target SKU Counts")
+    with st.expander("🌸 Flower targets by weight & strain", expanded=True):
+        st.caption("Enter how many unique SKUs you want on shelf for each weight × strain combination.")
+        flower_targets = {}
+        header_cols = st.columns([2] + [1]*4)
+        header_cols[0].markdown("**Weight**")
+        for i, s in enumerate(STRAINS):
+            header_cols[i+1].markdown(f"**{s}**")
+        for size in FL_SIZES:
+            row_cols = st.columns([2] + [1]*4)
+            row_cols[0].markdown(f"`{size}`")
+            for i, strain in enumerate(STRAINS):
+                default = 4 if size in ['3.5g','7g'] and strain in ['Indica','Sativa'] else \
+                          2 if size in ['3.5g','7g'] and strain in ['Hybrid','Blend'] else \
+                          1
+                flower_targets[(size, strain)] = row_cols[i+1].number_input(
+                    "", value=default, min_value=0, max_value=30,
+                    key=f"mb_fl_{size}_{strain}", label_visibility="collapsed")
+
+    with st.expander("📦 Other category targets", expanded=True):
+        cat_cols = st.columns(3)
+        cat_targets = {}
+        for i, cat in enumerate(NON_FLOWER_CATS):
+            defaults = {'Pre-Roll':12,'Vapes':10,'Edibles':10,'Concentrates':8,
+                        'Beverages':6,'Capsules':4,'Oil':4,'Topicals':3,'Seeds':2}
+            cat_targets[cat] = cat_cols[i % 3].number_input(
+                cat, value=defaults.get(cat, 5), min_value=0, max_value=50,
+                key=f"mb_cat_{cat}")
+
+    st.markdown("---")
+
+    # ── current shelf analysis ────────────────────────────────
+    on_shelf = merged_raw[merged_raw['In Stock Qty'] > 0].copy()
+
+    # Flower: group by size × strain
+    flower_shelf = on_shelf[on_shelf['Classification'] == 'Flower'].copy()
+    flower_counts = flower_shelf.groupby(['Flower Size','Strain'])['SKU'].nunique().reset_index()
+    flower_counts.columns = ['Size','Strain','On Shelf']
+
+    # Non-flower: group by category
+    cat_shelf = on_shelf[on_shelf['Classification'] != 'Flower'].groupby('Classification')['SKU'].nunique().reset_index()
+    cat_shelf.columns = ['Category','On Shelf']
+
+    # ── gap calculation ───────────────────────────────────────
+    st.markdown("#### Current Shelf vs Target")
+
+    # Flower gaps
+    st.markdown("**🌸 Flower**")
+    fl_rows = []
+    for size in FL_SIZES:
+        for strain in STRAINS:
+            target_n = flower_targets.get((size, strain), 0)
+            current  = flower_counts[(flower_counts['Size']==size) & (flower_counts['Strain']==strain)]['On Shelf'].sum()
+            gap      = max(0, target_n - current)
+            fl_rows.append({'Weight': size, 'Strain': strain, 'Target': target_n,
+                            'On Shelf': int(current), 'Gap': int(gap)})
+    fl_df = pd.DataFrame(fl_rows)
+    fl_pivot_shelf  = fl_df.pivot_table(index='Weight', columns='Strain', values='On Shelf',  fill_value=0).reindex(FL_SIZES).fillna(0).astype(int)
+    fl_pivot_target = fl_df.pivot_table(index='Weight', columns='Strain', values='Target',    fill_value=0).reindex(FL_SIZES).fillna(0).astype(int)
+    fl_pivot_gap    = fl_df.pivot_table(index='Weight', columns='Strain', values='Gap',       fill_value=0).reindex(FL_SIZES).fillna(0).astype(int)
+
+    for col in STRAINS:
+        if col not in fl_pivot_shelf.columns:
+            fl_pivot_shelf[col] = 0
+            fl_pivot_target[col] = 0
+            fl_pivot_gap[col] = 0
+    fl_pivot_shelf  = fl_pivot_shelf[STRAINS]
+    fl_pivot_target = fl_pivot_target[STRAINS]
+    fl_pivot_gap    = fl_pivot_gap[STRAINS]
+
+    gc1, gc2, gc3 = st.columns(3)
+    gc1.caption("On Shelf now")
+    gc1.dataframe(fl_pivot_shelf,  use_container_width=True)
+    gc2.caption("Your target")
+    gc2.dataframe(fl_pivot_target, use_container_width=True)
+    gc3.caption("Gap (need to order)")
+    def highlight_gap(val):
+        if val > 0: return 'background-color:#FFC7CE;font-weight:bold'
+        return 'background-color:#C6EFCE'
+    gc3.dataframe(fl_pivot_gap.style.map(highlight_gap), use_container_width=True)
+
+    # Non-flower gaps
+    st.markdown("**📦 Other Categories**")
+    cat_rows = []
+    for cat in NON_FLOWER_CATS:
+        target_n = cat_targets.get(cat, 0)
+        current  = cat_shelf[cat_shelf['Category']==cat]['On Shelf'].sum()
+        gap      = max(0, target_n - current)
+        status   = '🔴 Need' if gap > 0 else '🟢 OK'
+        cat_rows.append({'Category': cat, 'On Shelf': int(current), 'Target': target_n, 'Gap': int(gap), 'Status': status})
+    cat_df = pd.DataFrame(cat_rows)
+    st.dataframe(cat_df, hide_index=True, use_container_width=True)
+
+    # ── suggestions ───────────────────────────────────────────
+    gaps_exist = fl_pivot_gap.values.sum() > 0 or cat_df['Gap'].sum() > 0
+    if not gaps_exist:
+        st.success("✅ Your shelf is fully stocked to target across all categories!")
+    else:
+        st.markdown("---")
+        st.markdown("#### 💡 Suggested SKUs to Fill Gaps")
+        st.caption("SKUs you've sold before (priority) or available on OCS — order 1 case each to fill gaps.")
+
+        suggestions = []
+
+        # Flower suggestions
+        for size in FL_SIZES:
+            for strain in STRAINS:
+                gap = fl_pivot_gap.at[size, strain] if size in fl_pivot_gap.index else 0
+                if gap <= 0: continue
+                # Find candidates: flower, matching size & strain, available on OCS, not currently on shelf
+                candidates = merged_raw[
+                    (merged_raw['Classification'] == 'Flower') &
+                    (merged_raw['Flower Size'] == size) &
+                    (merged_raw['Strain'] == strain) &
+                    (merged_raw['In Stock Qty'] == 0) &
+                    (merged_raw['Stock Status'] == 'YES')
+                ].copy()
+                # Sort: sold before → higher velocity first; new to store second
+                candidates['_sold'] = candidates['Sales (60 Days)'] > 0
+                candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
+                for _, r in candidates.head(gap).iterrows():
+                    suggestions.append({
+                        'Category': 'Flower', 'Weight/Detail': size, 'Strain': strain,
+                        'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
+                        'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
+                        'Cases': 1, 'Pack Size': int(r['Pack Size']),
+                        'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
+                        'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
+                    })
+
+        # Non-flower suggestions
+        for cat in NON_FLOWER_CATS:
+            gap = int(cat_df[cat_df['Category']==cat]['Gap'].sum())
+            if gap <= 0: continue
+            candidates = merged_raw[
+                (merged_raw['Classification'] == cat) &
+                (merged_raw['In Stock Qty'] == 0) &
+                (merged_raw['Stock Status'] == 'YES')
+            ].copy()
+            candidates['_sold'] = candidates['Sales (60 Days)'] > 0
+            candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
+            for _, r in candidates.head(gap).iterrows():
+                suggestions.append({
+                    'Category': cat, 'Weight/Detail': '—', 'Strain': '—',
+                    'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
+                    'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
+                    'Cases': 1, 'Pack Size': int(r['Pack Size']),
+                    'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
+                    'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
+                })
+
+        if suggestions:
+            sug_df = pd.DataFrame(suggestions)
+            sug_df['Est. Cost'] = (sug_df['Cases'] * sug_df['Pack Size'] * sug_df['Unit Price'].fillna(0)).round(2)
+            sug_df['Unit Price'] = sug_df['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) and x > 0 else '—')
+            sug_df['Est. Cost']  = sug_df['Est. Cost'].map(lambda x: f'${x:,.2f}' if x > 0 else '—')
+            st.dataframe(sug_df, hide_index=True, use_container_width=True)
+
+            # Download OCS upload for menu builder suggestions
+            menu_upload = pd.DataFrame([{
+                'SKU': r['OCS Variant #'], 'Quantity': r['Cases']
+            } for r in suggestions])
+            menu_buf = io.BytesIO()
+            with pd.ExcelWriter(menu_buf, engine='openpyxl') as writer:
+                menu_upload.to_excel(writer, sheet_name='MasterCatalogue', index=False)
+            menu_buf.seek(0)
+            st.download_button(
+                label="📤 Download OCS Upload File for Menu Order (.xlsx)",
+                data=menu_buf,
+                file_name=f'OCS_MenuOrder_{today2.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+            )
+        else:
+            st.info("No matching SKUs found in the OCS catalogue to fill the gaps. Try adjusting your targets or check the catalogue for availability.")
