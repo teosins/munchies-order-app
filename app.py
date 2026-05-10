@@ -56,24 +56,43 @@ with st.sidebar:
     st.caption(f"Pre-tax: ${budget_pretax:,.2f}  |  HST (13%): ${budget - budget_pretax:,.2f}")
 
     st.markdown("**Target Days of Supply**")
+
+    with st.expander("🌸 Flower (by size)", expanded=True):
+        fc1, fc2 = st.columns(2)
+        with fc1:
+            t_flower_1g   = st.number_input("1g",   value=7,  min_value=1, max_value=90, key="f1g")
+            t_flower_35g  = st.number_input("3.5g", value=14, min_value=1, max_value=90, key="f35g")
+            t_flower_5g   = st.number_input("5g",   value=14, min_value=1, max_value=90, key="f5g")
+            t_flower_7g   = st.number_input("7g",   value=14, min_value=1, max_value=90, key="f7g")
+        with fc2:
+            t_flower_14g  = st.number_input("14g",  value=21, min_value=1, max_value=90, key="f14g")
+            t_flower_28g  = st.number_input("28g",  value=30, min_value=1, max_value=90, key="f28g")
+            t_flower_30g  = st.number_input("30g",  value=30, min_value=1, max_value=90, key="f30g")
+            t_flower_other= st.number_input("Other", value=14, min_value=1, max_value=90, key="fother")
+
+    FLOWER_SIZE_TARGET = {
+        '1g': t_flower_1g, '3.5g': t_flower_35g, '5g': t_flower_5g,
+        '7g': t_flower_7g, '14g': t_flower_14g,  '28g': t_flower_28g,
+        '30g': t_flower_30g,
+    }
+
     col1, col2 = st.columns(2)
     with col1:
-        t_flower    = st.number_input("Flower",       value=14, min_value=1, max_value=90)
         t_preroll   = st.number_input("Pre-Roll",     value=14, min_value=1, max_value=90)
         t_edibles   = st.number_input("Edibles",      value=14, min_value=1, max_value=90)
         t_vapes     = st.number_input("Vapes",        value=21, min_value=1, max_value=90)
         t_beverages = st.number_input("Beverages",    value=14, min_value=1, max_value=90)
-    with col2:
         t_capsules  = st.number_input("Capsules",     value=21, min_value=1, max_value=90)
+    with col2:
         t_conc      = st.number_input("Concentrates", value=14, min_value=1, max_value=90)
         t_topicals  = st.number_input("Topicals",     value=30, min_value=1, max_value=90)
         t_oil       = st.number_input("Oil",          value=21, min_value=1, max_value=90)
         t_seeds     = st.number_input("Seeds",        value=60, min_value=1, max_value=90)
 
     TARGET = {
-        'Flower': t_flower, 'Pre-Roll': t_preroll, 'Edibles': t_edibles,
-        'Vapes': t_vapes, 'Beverages': t_beverages, 'Capsules': t_capsules,
-        'Concentrates': t_conc, 'Topicals': t_topicals, 'Oil': t_oil, 'Seeds': t_seeds,
+        'Pre-Roll': t_preroll, 'Edibles': t_edibles, 'Vapes': t_vapes,
+        'Beverages': t_beverages, 'Capsules': t_capsules, 'Concentrates': t_conc,
+        'Topicals': t_topicals, 'Oil': t_oil, 'Seeds': t_seeds,
     }
 
 # ── main ──────────────────────────────────────────────────────
@@ -93,7 +112,7 @@ if not kova_file or not ocs_file:
 
 # ── process data ──────────────────────────────────────────────
 @st.cache_data(show_spinner="Processing your data...")
-def process(kova_bytes, ocs_bytes, target, budget_pretax):
+def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax):
     kova = pd.read_excel(io.BytesIO(kova_bytes), sheet_name='Reorder')
     ocs  = pd.read_excel(io.BytesIO(ocs_bytes),  sheet_name='MasterCatalogue')
 
@@ -119,12 +138,22 @@ def process(kova_bytes, ocs_bytes, target, budget_pretax):
         else:        return 'D'
     active['Tier'] = active['Weekly Vel'].apply(assign_tier)
 
+    import re
+    def extract_flower_size(sku):
+        m = re.search(r'_(\d+\.?\d*[gG])_', str(sku))
+        return m.group(1).lower() if m else None
+    active['Flower Size'] = active.apply(
+        lambda r: extract_flower_size(r['Supplier Sku']) if r['Classification'] == 'Flower' else None, axis=1)
+
     def calc_order(row):
         tier = row['Tier']; pack = int(row['Pack Size'])
         avail = row['Available']; dv = row['Daily Vel']
         dl = row['Days Left'] if pd.notna(row['Days Left']) else 0
         ins = row['In Stock Qty']
-        tgt = target.get(row['Classification'], 14)
+        if row['Classification'] == 'Flower':
+            tgt = flower_size_target.get(row['Flower Size'], flower_size_target.get('other', 14))
+        else:
+            tgt = target.get(row['Classification'], 14)
         if tier == 'A':
             needed = max(0, math.ceil(dv * tgt) - avail)
             cases  = math.ceil(needed / pack) if needed > 0 else 0
@@ -165,7 +194,7 @@ def process(kova_bytes, ocs_bytes, target, budget_pretax):
 
 kova_bytes = kova_file.read()
 ocs_bytes  = ocs_file.read()
-order_df, deferred_df, all_active = process(kova_bytes, ocs_bytes, TARGET, budget_pretax)
+order_df, deferred_df, all_active = process(kova_bytes, ocs_bytes, TARGET, FLOWER_SIZE_TARGET, budget_pretax)
 
 if order_df.empty:
     st.warning("No items need ordering based on current stock levels and settings.")
