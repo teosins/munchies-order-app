@@ -6,7 +6,7 @@ from datetime import date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-st.set_page_config(page_title="Munchies Order Tool", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="Canna Order Tool", page_icon="🌿", layout="wide")
 
 # ── styles ────────────────────────────────────────────────────
 def _f(color='000000', bold=False, sz=10): return Font(color=color, bold=bold, size=sz)
@@ -43,10 +43,10 @@ def vcell(ws, r, c, val, font=None, fill=None, fmt=None, align='left', bold=Fals
 
 # ── sidebar ───────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🌿 Munchies Cannabis")
+    st.markdown("## 🌿 Canna Order Tool")
     st.markdown("---")
     st.header("📁 Upload Files")
-    kova_file = st.file_uploader("Kova Reorder Report (.xlsx)", type="xlsx", key="kova")
+    kova_file = st.file_uploader("Cova Reorder Report (.xlsx)", type="xlsx", key="kova")
     ocs_file  = st.file_uploader("OCS Catalogue (.xlsx)",       type="xlsx", key="ocs")
 
     st.markdown("---")
@@ -77,13 +77,13 @@ with st.sidebar:
     }
 
 # ── main ──────────────────────────────────────────────────────
-st.title("🌿 Munchies Cannabis — OCS Order Tool")
+st.title("🌿 Canna Order Tool")
 st.caption(f"Generating orders for: {date.today().strftime('%B %d, %Y')}")
 
 if not kova_file or not ocs_file:
-    st.info("Upload your **Kova Reorder Report** and **OCS Catalogue** in the sidebar to get started.")
+    st.info("Upload your **Cova Reorder Report** and **OCS Catalogue** in the sidebar to get started.")
     st.markdown("""
-    **How to export from Kova:**
+    **How to export from Cova:**
     Reports → Reorder → Export as .xlsx
 
     **How to export from OCS Wholesale:**
