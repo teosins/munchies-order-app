@@ -51,9 +51,32 @@ with st.sidebar:
 
     st.markdown("---")
     st.header("⚙️ Settings")
-    budget = st.number_input("Weekly Budget (incl. HST)", value=30000, step=500, format="%d")
-    budget_pretax = round(budget / 1.13, 2)
-    st.caption(f"Pre-tax: ${budget_pretax:,.2f}  |  HST (13%): ${budget - budget_pretax:,.2f}")
+
+    # ── tax settings ──────────────────────────────────────────
+    PROVINCE_RATES = {
+        "Ontario (HST 13%)":              0.13,
+        "Nova Scotia (HST 15%)":          0.15,
+        "New Brunswick (HST 15%)":        0.15,
+        "Newfoundland (HST 15%)":         0.15,
+        "PEI (HST 15%)":                  0.15,
+        "British Columbia (GST+PST 12%)": 0.12,
+        "Manitoba (GST+PST 12%)":         0.12,
+        "Saskatchewan (GST+PST 11%)":     0.11,
+        "Quebec (GST+QST 14.975%)":       0.14975,
+        "Alberta (GST 5%)":               0.05,
+        "Custom":                         None,
+    }
+    province = st.selectbox("Province / Tax Region", list(PROVINCE_RATES.keys()), index=0)
+    if PROVINCE_RATES[province] is None:
+        tax_rate = st.number_input("Custom Tax Rate (%)", value=13.0, min_value=0.0, max_value=30.0, step=0.1) / 100
+    else:
+        tax_rate = PROVINCE_RATES[province]
+        st.caption(f"Tax rate: {tax_rate*100:.3g}%")
+
+    budget = st.number_input("Weekly Budget (tax-in)", value=30000, step=500, format="%d")
+    budget_pretax = round(budget / (1 + tax_rate), 2)
+    tax_amount = budget - budget_pretax
+    st.caption(f"Pre-tax: ${budget_pretax:,.2f}  |  Tax ({tax_rate*100:.3g}%): ${tax_amount:,.2f}")
 
     st.markdown("**Target Days of Supply**")
 
@@ -201,17 +224,18 @@ if order_df.empty:
     st.stop()
 
 pretax_total = order_df['Est Cost'].sum()
-hst          = pretax_total * 0.13
-total        = pretax_total + hst
+tax_amount_actual = pretax_total * tax_rate
+total        = pretax_total + tax_amount_actual
+tax_label    = f"Tax ({tax_rate*100:.3g}%)"
 
 # ── summary metrics ───────────────────────────────────────────
 st.markdown("### This Week's Order")
 m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("SKUs to Order",    len(order_df))
-m2.metric("Pre-Tax Total",    f"${pretax_total:,.2f}")
-m3.metric("HST (13%)",        f"${hst:,.2f}")
-m4.metric("Total (Tax-In)",   f"${total:,.2f}")
-m5.metric("Deferred SKUs",    len(deferred_df))
+m1.metric("SKUs to Order",  len(order_df))
+m2.metric("Pre-Tax Total",  f"${pretax_total:,.2f}")
+m3.metric(tax_label,        f"${tax_amount_actual:,.2f}")
+m4.metric("Total (Tax-In)", f"${total:,.2f}")
+m5.metric("Deferred SKUs",  len(deferred_df))
 
 st.markdown("---")
 
@@ -281,7 +305,7 @@ if not deferred_df.empty:
 st.markdown("---")
 
 # ── generate files ────────────────────────────────────────────
-def build_workbook(order_df, deferred_df, all_active, budget_pretax, target, today):
+def build_workbook(order_df, deferred_df, all_active, budget_pretax, target, today, tax_rate=0.13):
     wb = Workbook()
 
     tier_colours = {'A':'375623','B':'375623','C':'9C6500','D':'9C0006'}
@@ -348,7 +372,7 @@ def build_workbook(order_df, deferred_df, all_active, budget_pretax, target, tod
         last = ROW-1
         for label, offset, formula in [
             ('SUBTOTAL (pre-tax)', 0, f'=SUM(O3:O{last})'),
-            ('HST 13%',           1, f'=O{ROW}*0.13'),
+            (f'Tax ({tax_rate*100:.3g}%)', 1, f'=O{ROW}*{tax_rate}'),
             ('TOTAL (tax-in)',    2, f'=O{ROW}+O{ROW+1}'),
         ]:
             r = ROW+offset
@@ -360,7 +384,7 @@ def build_workbook(order_df, deferred_df, all_active, budget_pretax, target, tod
 
     # Sheet 1: Order Builder
     ws_ob = wb.active; ws_ob.title = 'Order Builder'
-    write_order_sheet(ws_ob, order_df, f'OCS Order Builder — {today.strftime("%B %d, %Y")} — Budget: ${budget_pretax:,.0f} pre-tax (${round(budget_pretax*1.13):,} incl. HST)')
+    write_order_sheet(ws_ob, order_df, f'OCS Order Builder — {today.strftime("%B %d, %Y")} — Budget: ${budget_pretax:,.0f} pre-tax (${round(budget_pretax*(1+tax_rate)):,} tax-in)')
     ws_ob.sheet_properties.tabColor = 'FFC000'
 
     # Sheet 2: Portal Order
@@ -396,7 +420,7 @@ def build_workbook(order_df, deferred_df, all_active, budget_pretax, target, tod
         vcell(ws_portal,PROW,9,row['Est Cost'] if pd.notna(row.get('Est Cost')) and row['Est Cost']>0 else None,fill=alt,fmt='"$"#,##0.00',align='center')
         PROW+=1
     last_p=PROW-1
-    for label,offset,formula in [('SUBTOTAL (pre-tax)',0,f'=SUM(I3:I{last_p})'),('HST 13%',1,f'=I{PROW}*0.13'),('TOTAL (tax-in)',2,f'=I{PROW}+I{PROW+1}')]:
+    for label,offset,formula in [('SUBTOTAL (pre-tax)',0,f'=SUM(I3:I{last_p})'),(f'Tax ({tax_rate*100:.3g}%)',1,f'=I{PROW}*{tax_rate}'),('TOTAL (tax-in)',2,f'=I{PROW}+I{PROW+1}')]:
         r=PROW+offset
         for ci in range(1,len(pcols)+1): ws_portal.cell(row=r,column=ci).fill=_p('1F4E79'); ws_portal.cell(row=r,column=ci).border=BORDER
         lbl=ws_portal.cell(row=r,column=1,value=label); lbl.font=HDR_FONT; lbl.fill=_p('1F4E79'); lbl.alignment=_a('right'); lbl.border=BORDER
@@ -471,7 +495,7 @@ dl1, dl2 = st.columns(2)
 today = date.today()
 
 with dl1:
-    workbook_buf = build_workbook(order_df, deferred_df, all_active, budget_pretax, TARGET, today)
+    workbook_buf = build_workbook(order_df, deferred_df, all_active, budget_pretax, TARGET, today, tax_rate)
     st.download_button(
         label="📥 Download Order Workbook (.xlsx)",
         data=workbook_buf,
