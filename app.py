@@ -152,13 +152,11 @@ def load_raw(kova_bytes, ocs_bytes):
         return m.group(1).lower() if m else None
 
     def map_strain(row):
-        # try Plant Type first
         pt = str(row.get('Plant Type', '') or '').lower()
         if 'indica' in pt:  return 'Indica'
         if 'sativa' in pt:  return 'Sativa'
         if 'hybrid' in pt:  return 'Hybrid'
         if 'blend'  in pt:  return 'Blend'
-        # fallback: product name
         name = str(row.get('Product', '') or '').lower()
         for token in ['- indica', 'indica -', '(indica)']:
             if token in name: return 'Indica'
@@ -251,89 +249,7 @@ if order_df.empty:
     st.warning("No items need ordering based on current stock levels and settings.")
     st.stop()
 
-with tab1:
- pretax_total = order_df['Est Cost'].sum()
-tax_amount_actual = pretax_total * tax_rate
-total        = pretax_total + tax_amount_actual
-tax_label    = f"Tax ({tax_rate*100:.3g}%)"
-
-# ── summary metrics ───────────────────────────────────────────
-st.markdown("### This Week's Order")
-m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("SKUs to Order",  len(order_df))
-m2.metric("Pre-Tax Total",  f"${pretax_total:,.2f}")
-m3.metric(tax_label,        f"${tax_amount_actual:,.2f}")
-m4.metric("Total (Tax-In)", f"${total:,.2f}")
-m5.metric("Deferred SKUs",  len(deferred_df))
-
-st.markdown("---")
-
-# ── category summary ──────────────────────────────────────────
-col_left, col_right = st.columns([1, 2])
-
-with col_left:
-    st.markdown("**By Category**")
-    cat_sum = order_df.groupby('Classification').agg(
-        SKUs=('SKU','count'),
-        Cost=('Est Cost','sum')
-    ).sort_values('Cost', ascending=False).reset_index()
-    cat_sum['Cost'] = cat_sum['Cost'].map('${:,.2f}'.format)
-    st.dataframe(cat_sum, hide_index=True, use_container_width=True)
-
-with col_right:
-    st.markdown("**By Velocity Tier**")
-    tier_labels = {'A':'A — Fast (5+/wk)','B':'B — Mid (2–4/wk)','C':'C — Slow (~1/wk)','D':'D — Very Slow (<1/wk)'}
-    tier_sum = order_df.groupby('Tier').agg(
-        SKUs=('SKU','count'),
-        Cost=('Est Cost','sum')
-    ).reset_index()
-    tier_sum['Tier'] = tier_sum['Tier'].map(tier_labels)
-    tier_sum['Cost'] = tier_sum['Cost'].map('${:,.2f}'.format)
-    st.dataframe(tier_sum, hide_index=True, use_container_width=True)
-
-st.markdown("---")
-
-# ── order table ───────────────────────────────────────────────
-st.markdown("### Order Detail")
-display_cols = {
-    'Classification':'Category','Product':'Product','Tier':'Tier',
-    'Days Left':'Days Left','In Stock Qty':'In Stock','On Order':'On Order',
-    'Sales (7 Days)':'7d Sales','Sales (30 Days)':'30d Sales',
-    'Weekly Vel':'Wkly Vel','Cases':'Cases','Suggest':'Units',
-    'Unit Price':'Unit Price','Est Cost':'Est Cost','Supplier Sku':'OCS Variant #'
-}
-show = order_df[[c for c in display_cols.keys() if c in order_df.columns]].rename(columns=display_cols)
-show['Unit Price'] = show['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
-show['Est Cost']   = show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
-show['Days Left']  = show['Days Left'].round(1)
-
-def color_tier(val):
-    colors = {'A':'background-color:#C6EFCE','B':'background-color:#E2EFDA',
-              'C':'background-color:#FFEB9C','D':'background-color:#FFC7CE'}
-    return colors.get(val, '')
-
-def color_days(val):
-    try:
-        v = float(val)
-        if v <= 3:  return 'background-color:#FFC7CE;color:#9C0006;font-weight:bold'
-        if v <= 7:  return 'background-color:#FFEB9C;color:#9C6500;font-weight:bold'
-        if v >= 14: return 'background-color:#C6EFCE;color:#276221'
-    except: pass
-    return ''
-
-styled = show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left'])
-st.dataframe(styled, hide_index=True, use_container_width=True, height=500)
-
-if not deferred_df.empty:
-    with st.expander(f"📋 Deferred to Next Order ({len(deferred_df)} SKUs — ${deferred_df['Est Cost'].sum():,.2f} pre-tax)"):
-        def_show = deferred_df[['Classification','Product','Tier','Days Left','In Stock Qty','Weekly Vel','Cases','Est Cost']].copy()
-        def_show['Est Cost'] = def_show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
-        st.dataframe(def_show.rename(columns={'Classification':'Category','In Stock Qty':'In Stock','Weekly Vel':'Wkly Vel'}),
-                     hide_index=True, use_container_width=True)
-
-st.markdown("---")
-
-# ── generate files ────────────────────────────────────────────
+# ── workbook builders (defined before tabs) ───────────────────
 def build_workbook(order_df, deferred_df, all_active, budget_pretax, target, today, tax_rate=0.13):
     wb = Workbook()
 
@@ -518,27 +434,113 @@ def build_upload(order_df):
     buf.seek(0)
     return buf
 
- st.markdown("### Download Files")
- dl1, dl2 = st.columns(2)
- today = date.today()
- with dl1:
-     workbook_buf = build_workbook(order_df, deferred_df, all_active, budget_pretax, TARGET, today, tax_rate)
-     st.download_button(
-         label="📥 Download Order Workbook (.xlsx)",
-         data=workbook_buf,
-         file_name=f'OCS_Order_Tool_{today.strftime("%Y%m%d")}.xlsx',
-         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-         use_container_width=True,
-     )
- with dl2:
-     upload_buf = build_upload(order_df)
-     st.download_button(
-         label="📤 Download OCS Upload File (.xlsx)",
-         data=upload_buf,
-         file_name=f'OCS_Upload_{today.strftime("%Y%m%d")}.xlsx',
-         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-         use_container_width=True,
-     )
+# ══════════════════════════════════════════════════════════════
+# TAB 1: REPLENISHMENT ORDER
+# ══════════════════════════════════════════════════════════════
+with tab1:
+    pretax_total      = order_df['Est Cost'].sum()
+    tax_amount_actual = pretax_total * tax_rate
+    total             = pretax_total + tax_amount_actual
+    tax_label         = f"Tax ({tax_rate*100:.3g}%)"
+
+    # ── summary metrics ───────────────────────────────────────
+    st.markdown("### This Week's Order")
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("SKUs to Order",  len(order_df))
+    m2.metric("Pre-Tax Total",  f"${pretax_total:,.2f}")
+    m3.metric(tax_label,        f"${tax_amount_actual:,.2f}")
+    m4.metric("Total (Tax-In)", f"${total:,.2f}")
+    m5.metric("Deferred SKUs",  len(deferred_df))
+
+    st.markdown("---")
+
+    # ── category summary ──────────────────────────────────────
+    col_left, col_right = st.columns([1, 2])
+
+    with col_left:
+        st.markdown("**By Category**")
+        cat_sum = order_df.groupby('Classification').agg(
+            SKUs=('SKU','count'),
+            Cost=('Est Cost','sum')
+        ).sort_values('Cost', ascending=False).reset_index()
+        cat_sum['Cost'] = cat_sum['Cost'].map('${:,.2f}'.format)
+        st.dataframe(cat_sum, hide_index=True, use_container_width=True)
+
+    with col_right:
+        st.markdown("**By Velocity Tier**")
+        tier_labels = {'A':'A — Fast (5+/wk)','B':'B — Mid (2–4/wk)','C':'C — Slow (~1/wk)','D':'D — Very Slow (<1/wk)'}
+        tier_sum = order_df.groupby('Tier').agg(
+            SKUs=('SKU','count'),
+            Cost=('Est Cost','sum')
+        ).reset_index()
+        tier_sum['Tier'] = tier_sum['Tier'].map(tier_labels)
+        tier_sum['Cost'] = tier_sum['Cost'].map('${:,.2f}'.format)
+        st.dataframe(tier_sum, hide_index=True, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── order table ───────────────────────────────────────────
+    st.markdown("### Order Detail")
+    display_cols = {
+        'Classification':'Category','Product':'Product','Tier':'Tier',
+        'Days Left':'Days Left','In Stock Qty':'In Stock','On Order':'On Order',
+        'Sales (7 Days)':'7d Sales','Sales (30 Days)':'30d Sales',
+        'Weekly Vel':'Wkly Vel','Cases':'Cases','Suggest':'Units',
+        'Unit Price':'Unit Price','Est Cost':'Est Cost','Supplier Sku':'OCS Variant #'
+    }
+    show = order_df[[c for c in display_cols.keys() if c in order_df.columns]].rename(columns=display_cols)
+    show['Unit Price'] = show['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
+    show['Est Cost']   = show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
+    show['Days Left']  = show['Days Left'].round(1)
+
+    def color_tier(val):
+        colors = {'A':'background-color:#C6EFCE','B':'background-color:#E2EFDA',
+                  'C':'background-color:#FFEB9C','D':'background-color:#FFC7CE'}
+        return colors.get(val, '')
+
+    def color_days(val):
+        try:
+            v = float(val)
+            if v <= 3:  return 'background-color:#FFC7CE;color:#9C0006;font-weight:bold'
+            if v <= 7:  return 'background-color:#FFEB9C;color:#9C6500;font-weight:bold'
+            if v >= 14: return 'background-color:#C6EFCE;color:#276221'
+        except: pass
+        return ''
+
+    styled = show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left'])
+    st.dataframe(styled, hide_index=True, use_container_width=True, height=500)
+
+    if not deferred_df.empty:
+        with st.expander(f"📋 Deferred to Next Order ({len(deferred_df)} SKUs — ${deferred_df['Est Cost'].sum():,.2f} pre-tax)"):
+            def_show = deferred_df[['Classification','Product','Tier','Days Left','In Stock Qty','Weekly Vel','Cases','Est Cost']].copy()
+            def_show['Est Cost'] = def_show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
+            st.dataframe(def_show.rename(columns={'Classification':'Category','In Stock Qty':'In Stock','Weekly Vel':'Wkly Vel'}),
+                         hide_index=True, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── download files ────────────────────────────────────────
+    st.markdown("### Download Files")
+    dl1, dl2 = st.columns(2)
+    today = date.today()
+    with dl1:
+        workbook_buf = build_workbook(order_df, deferred_df, all_active, budget_pretax, TARGET, today, tax_rate)
+        st.download_button(
+            label="📥 Download Order Workbook (.xlsx)",
+            data=workbook_buf,
+            file_name=f'OCS_Order_Tool_{today.strftime("%Y%m%d")}.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            use_container_width=True,
+        )
+    with dl2:
+        upload_buf = build_upload(order_df)
+        st.download_button(
+            label="📤 Download OCS Upload File (.xlsx)",
+            data=upload_buf,
+            file_name=f'OCS_Upload_{today.strftime("%Y%m%d")}.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            use_container_width=True,
+        )
 
 # ══════════════════════════════════════════════════════════════
 # TAB 2: MENU BUILDER
@@ -587,19 +589,16 @@ with tab2:
     # ── current shelf analysis ────────────────────────────────
     on_shelf = merged_raw[merged_raw['In Stock Qty'] > 0].copy()
 
-    # Flower: group by size × strain
     flower_shelf = on_shelf[on_shelf['Classification'] == 'Flower'].copy()
     flower_counts = flower_shelf.groupby(['Flower Size','Strain'])['SKU'].nunique().reset_index()
     flower_counts.columns = ['Size','Strain','On Shelf']
 
-    # Non-flower: group by category
     cat_shelf = on_shelf[on_shelf['Classification'] != 'Flower'].groupby('Classification')['SKU'].nunique().reset_index()
     cat_shelf.columns = ['Category','On Shelf']
 
     # ── gap calculation ───────────────────────────────────────
     st.markdown("#### Current Shelf vs Target")
 
-    # Flower gaps
     st.markdown("**🌸 Flower**")
     fl_rows = []
     for size in FL_SIZES:
@@ -634,7 +633,6 @@ with tab2:
         return 'background-color:#C6EFCE'
     gc3.dataframe(fl_pivot_gap.style.map(highlight_gap), use_container_width=True)
 
-    # Non-flower gaps
     st.markdown("**📦 Other Categories**")
     cat_rows = []
     for cat in NON_FLOWER_CATS:
@@ -657,12 +655,10 @@ with tab2:
 
         suggestions = []
 
-        # Flower suggestions
         for size in FL_SIZES:
             for strain in STRAINS:
                 gap = fl_pivot_gap.at[size, strain] if size in fl_pivot_gap.index else 0
                 if gap <= 0: continue
-                # Find candidates: flower, matching size & strain, available on OCS, not currently on shelf
                 candidates = merged_raw[
                     (merged_raw['Classification'] == 'Flower') &
                     (merged_raw['Flower Size'] == size) &
@@ -670,7 +666,6 @@ with tab2:
                     (merged_raw['In Stock Qty'] == 0) &
                     (merged_raw['Stock Status'] == 'YES')
                 ].copy()
-                # Sort: sold before → higher velocity first; new to store second
                 candidates['_sold'] = candidates['Sales (60 Days)'] > 0
                 candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
                 for _, r in candidates.head(gap).iterrows():
@@ -683,7 +678,6 @@ with tab2:
                         'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
                     })
 
-        # Non-flower suggestions
         for cat in NON_FLOWER_CATS:
             gap = int(cat_df[cat_df['Category']==cat]['Gap'].sum())
             if gap <= 0: continue
@@ -711,7 +705,6 @@ with tab2:
             sug_df['Est. Cost']  = sug_df['Est. Cost'].map(lambda x: f'${x:,.2f}' if x > 0 else '—')
             st.dataframe(sug_df, hide_index=True, use_container_width=True)
 
-            # Download OCS upload for menu builder suggestions
             menu_upload = pd.DataFrame([{
                 'SKU': r['OCS Variant #'], 'Quantity': r['Cases']
             } for r in suggestions])
