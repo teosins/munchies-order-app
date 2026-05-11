@@ -291,7 +291,14 @@ def load_raw(kova_bytes, ocs_bytes):
     kova_ocs['Supplier Sku'] = kova_ocs['Supplier Sku'].str.strip()
     ocs['OCS Variant Number'] = ocs['OCS Variant Number'].str.strip()
     ocs_cols = ['OCS Variant Number','OCS Item Number','Unit Price','Pack Size','Stock Status','Plant Type']
+    for _opt in ['Sub-Category']:
+        if _opt in ocs.columns:
+            ocs_cols.append(_opt)
     merged = kova_ocs.merge(ocs[ocs_cols], left_on='Supplier Sku', right_on='OCS Variant Number', how='left')
+    if 'Sub-Category' not in merged.columns:
+        merged['Sub-Category'] = ''
+    else:
+        merged['Sub-Category'] = merged['Sub-Category'].fillna('')
 
     def extract_size(sku):
         m = re.search(r'_(\d+\.?\d*[gG])_', str(sku))
@@ -829,38 +836,80 @@ with tab3:
         if m: return (3, 0, float(m.group(1)))
         return (99, 0, 0)
 
-    # detect sizes per category from catalogue
+    # Detect sizes per category
     cat_sizes = {}
     for cat in ALL_CATS:
         raw = merged_raw[(merged_raw['Classification']==cat) & merged_raw['Product Size'].notna()]['Product Size'].unique().tolist()
         try:    cat_sizes[cat] = sorted(raw, key=sort_size_key)
         except: cat_sizes[cat] = sorted(raw)
 
+    # Vapes sub-categories from OCS Sub-Category column
+    has_subcat = 'Sub-Category' in merged_raw.columns
+    vape_subcats = []
+    vape_subcat_sizes = {}  # subcat -> [sizes]
+    if has_subcat:
+        sc_raw = merged_raw[
+            (merged_raw['Classification']=='Vapes') & (merged_raw['Sub-Category']!='')
+        ]['Sub-Category'].dropna().unique().tolist()
+        vape_subcats = sorted(sc_raw)
+        for sc in vape_subcats:
+            sc_sizes_raw = merged_raw[
+                (merged_raw['Classification']=='Vapes') &
+                (merged_raw['Sub-Category']==sc) &
+                merged_raw['Product Size'].notna()
+            ]['Product Size'].unique().tolist()
+            try:    vape_subcat_sizes[sc] = sorted(sc_sizes_raw, key=sort_size_key)
+            except: vape_subcat_sizes[sc] = sorted(sc_sizes_raw)
+
     # ── target settings ───────────────────────────────────────
     st.markdown("#### Target SKU Counts")
-    mb_targets = {}
+    mb_targets = {}       # (cat, size, strain) for non-Vapes
+    mb_vape_targets = {}  # (subcat, size, strain) for Vapes when sub-cats exist
+
     for cat in ALL_CATS:
-        sizes = cat_sizes[cat]
-        emoji = CAT_EMOJIS[cat]
-        with st.expander(f"{emoji} {cat} — by size & strain", expanded=(cat == 'Flower')):
-            if not sizes:
-                st.caption(f"No {cat} sizes detected in your catalogue.")
-                continue
-            st.caption(f"{len(sizes)} sizes detected from your catalogue.")
-            hdr = st.columns([2] + [1]*4)
-            hdr[0].markdown("**Size**")
-            for i, s in enumerate(STRAINS): hdr[i+1].markdown(f"**{s}**")
-            for size in sizes:
-                rc = st.columns([2] + [1]*4)
-                rc[0].markdown(f"`{size}`")
-                for i, strain in enumerate(STRAINS):
-                    default = 0
-                    if cat == 'Flower':
-                        default = 4 if size in ['3.5g','7g'] and strain in ['Indica','Sativa'] else \
-                                  2 if size in ['3.5g','7g'] and strain in ['Hybrid','Blend'] else 1
-                    mb_targets[(cat, size, strain)] = rc[i+1].number_input(
-                        "", value=default, min_value=0, max_value=50,
-                        key=f"mb_{cat}_{size}_{strain}", label_visibility="collapsed")
+        sizes  = cat_sizes[cat]
+        emoji  = CAT_EMOJIS[cat]
+
+        if cat == 'Vapes' and vape_subcats:
+            with st.expander(f"{emoji} Vapes — by sub-category, size & strain", expanded=False):
+                st.caption(f"{len(vape_subcats)} sub-categories detected: {', '.join(vape_subcats)}")
+                for sc in vape_subcats:
+                    sc_sizes = vape_subcat_sizes.get(sc, [])
+                    st.markdown(f"**🔹 {sc}**")
+                    if not sc_sizes:
+                        st.caption(f"No sizes detected for {sc}.")
+                        continue
+                    hdr = st.columns([2]+[1]*4)
+                    hdr[0].markdown("**Size**")
+                    for i, s in enumerate(STRAINS): hdr[i+1].markdown(f"**{s}**")
+                    for size in sc_sizes:
+                        rc = st.columns([2]+[1]*4)
+                        rc[0].markdown(f"`{size}`")
+                        for i, strain in enumerate(STRAINS):
+                            mb_vape_targets[(sc, size, strain)] = rc[i+1].number_input(
+                                "", value=0, min_value=0, max_value=50,
+                                key=f"mb_Vapes_{sc}_{size}_{strain}",
+                                label_visibility="collapsed")
+        else:
+            with st.expander(f"{emoji} {cat} — by size & strain", expanded=(cat=='Flower')):
+                if not sizes:
+                    st.caption(f"No {cat} sizes detected in your catalogue.")
+                    continue
+                st.caption(f"{len(sizes)} sizes detected from your catalogue.")
+                hdr = st.columns([2]+[1]*4)
+                hdr[0].markdown("**Size**")
+                for i, s in enumerate(STRAINS): hdr[i+1].markdown(f"**{s}**")
+                for size in sizes:
+                    rc = st.columns([2]+[1]*4)
+                    rc[0].markdown(f"`{size}`")
+                    for i, strain in enumerate(STRAINS):
+                        default = 0
+                        if cat == 'Flower':
+                            default = 4 if size in ['3.5g','7g'] and strain in ['Indica','Sativa'] else \
+                                      2 if size in ['3.5g','7g'] and strain in ['Hybrid','Blend'] else 1
+                        mb_targets[(cat, size, strain)] = rc[i+1].number_input(
+                            "", value=default, min_value=0, max_value=50,
+                            key=f"mb_{cat}_{size}_{strain}", label_visibility="collapsed")
 
     st.markdown("---")
 
@@ -868,6 +917,14 @@ with tab3:
     on_shelf     = merged_raw[merged_raw['In Stock Qty'] > 0].copy()
     shelf_counts = on_shelf.groupby(['Classification','Product Size','Strain'])['SKU'].nunique().reset_index()
     shelf_counts.columns = ['Category','Size','Strain','On Shelf']
+
+    # Vapes shelf counts by sub-category
+    vape_shelf = pd.DataFrame()
+    if has_subcat and vape_subcats:
+        vs_raw = on_shelf[on_shelf['Classification']=='Vapes']
+        if not vs_raw.empty:
+            vape_shelf = vs_raw.groupby(['Sub-Category','Product Size','Strain'])['SKU'].nunique().reset_index()
+            vape_shelf.columns = ['Sub-Category','Size','Strain','On Shelf']
 
     # ── gap helpers ───────────────────────────────────────────
     def highlight_gap(val):
@@ -884,35 +941,83 @@ with tab3:
                     (shelf_counts['Size']==size) &
                     (shelf_counts['Strain']==strain)
                 ]['On Shelf'].sum())
-                rows.append({'Size': size, 'Strain': strain, 'Target': tgt, 'On Shelf': cur, 'Gap': max(0, tgt - cur)})
+                rows.append({'Size': size, 'Strain': strain, 'Target': tgt, 'On Shelf': cur, 'Gap': max(0, tgt-cur)})
         if not rows:
             return pd.DataFrame(0, index=sizes, columns=STRAINS)
-        df  = pd.DataFrame(rows)
-        ps  = df.pivot_table(index='Size', columns='Strain', values='On Shelf', fill_value=0).reindex(sizes).fillna(0).astype(int)
-        pt  = df.pivot_table(index='Size', columns='Strain', values='Target',   fill_value=0).reindex(sizes).fillna(0).astype(int)
-        pg  = df.pivot_table(index='Size', columns='Strain', values='Gap',      fill_value=0).reindex(sizes).fillna(0).astype(int)
+        df = pd.DataFrame(rows)
+        ps = df.pivot_table(index='Size', columns='Strain', values='On Shelf', fill_value=0).reindex(sizes).fillna(0).astype(int)
+        pt = df.pivot_table(index='Size', columns='Strain', values='Target',   fill_value=0).reindex(sizes).fillna(0).astype(int)
+        pg = df.pivot_table(index='Size', columns='Strain', values='Gap',      fill_value=0).reindex(sizes).fillna(0).astype(int)
         for piv in [ps, pt, pg]:
             for col in STRAINS:
                 if col not in piv.columns: piv[col] = 0
         gc1, gc2, gc3 = st.columns(3)
-        gc1.caption("On Shelf now");        gc1.dataframe(ps[STRAINS],  use_container_width=True)
-        gc2.caption("Your target");         gc2.dataframe(pt[STRAINS],  use_container_width=True)
+        gc1.caption("On Shelf now");        gc1.dataframe(ps[STRAINS], use_container_width=True)
+        gc2.caption("Your target");         gc2.dataframe(pt[STRAINS], use_container_width=True)
+        gc3.caption("Gap (need to order)"); gc3.dataframe(pg[STRAINS].style.map(highlight_gap), use_container_width=True)
+        return pg[STRAINS]
+
+    def show_vape_subcat_grid(sc, sc_sizes):
+        rows = []
+        for size in sc_sizes:
+            for strain in STRAINS:
+                tgt = mb_vape_targets.get((sc, size, strain), 0)
+                if vape_shelf.empty:
+                    cur = 0
+                else:
+                    cur = int(vape_shelf[
+                        (vape_shelf['Sub-Category']==sc) &
+                        (vape_shelf['Size']==size) &
+                        (vape_shelf['Strain']==strain)
+                    ]['On Shelf'].sum())
+                rows.append({'Size': size, 'Strain': strain, 'Target': tgt, 'On Shelf': cur, 'Gap': max(0, tgt-cur)})
+        if not rows:
+            return pd.DataFrame(0, index=sc_sizes, columns=STRAINS)
+        df = pd.DataFrame(rows)
+        ps = df.pivot_table(index='Size', columns='Strain', values='On Shelf', fill_value=0).reindex(sc_sizes).fillna(0).astype(int)
+        pt = df.pivot_table(index='Size', columns='Strain', values='Target',   fill_value=0).reindex(sc_sizes).fillna(0).astype(int)
+        pg = df.pivot_table(index='Size', columns='Strain', values='Gap',      fill_value=0).reindex(sc_sizes).fillna(0).astype(int)
+        for piv in [ps, pt, pg]:
+            for col in STRAINS:
+                if col not in piv.columns: piv[col] = 0
+        gc1, gc2, gc3 = st.columns(3)
+        gc1.caption("On Shelf now");        gc1.dataframe(ps[STRAINS], use_container_width=True)
+        gc2.caption("Your target");         gc2.dataframe(pt[STRAINS], use_container_width=True)
         gc3.caption("Gap (need to order)"); gc3.dataframe(pg[STRAINS].style.map(highlight_gap), use_container_width=True)
         return pg[STRAINS]
 
     # ── gap display ───────────────────────────────────────────
     st.markdown("#### Current Shelf vs Target")
-    cat_pivot_gaps = {}
+    cat_pivot_gaps  = {}   # cat -> gap pivot  (non-Vapes)
+    vape_subcat_gaps = {}  # subcat -> gap pivot  (Vapes with sub-cats)
+
     for cat in ALL_CATS:
-        sizes = cat_sizes[cat]
-        if not sizes: continue
-        if not any(mb_targets.get((cat, s, st_), 0) > 0 for s in sizes for st_ in STRAINS): continue
-        st.markdown(f"**{CAT_EMOJIS[cat]} {cat}**")
-        cat_pivot_gaps[cat] = show_size_strain_grid(cat, sizes)
+        if cat == 'Vapes' and vape_subcats:
+            any_vape_tgt = any(mb_vape_targets.get((sc, s, st_), 0) > 0
+                               for sc in vape_subcats
+                               for s in vape_subcat_sizes.get(sc, [])
+                               for st_ in STRAINS)
+            if not any_vape_tgt:
+                continue
+            st.markdown(f"**{CAT_EMOJIS['Vapes']} Vapes**")
+            for sc in vape_subcats:
+                sc_sizes = vape_subcat_sizes.get(sc, [])
+                if not sc_sizes: continue
+                if not any(mb_vape_targets.get((sc, s, st_), 0) > 0 for s in sc_sizes for st_ in STRAINS):
+                    continue
+                st.markdown(f"*🔹 {sc}*")
+                vape_subcat_gaps[sc] = show_vape_subcat_grid(sc, sc_sizes)
+        else:
+            sizes = cat_sizes[cat]
+            if not sizes: continue
+            if not any(mb_targets.get((cat, s, st_), 0) > 0 for s in sizes for st_ in STRAINS): continue
+            st.markdown(f"**{CAT_EMOJIS[cat]} {cat}**")
+            cat_pivot_gaps[cat] = show_size_strain_grid(cat, sizes)
 
     # ── suggestions ───────────────────────────────────────────
-    total_gaps = sum(int(pg.values.sum()) for pg in cat_pivot_gaps.values())
-    if not cat_pivot_gaps or total_gaps == 0:
+    total_gaps = (sum(int(pg.values.sum()) for pg in cat_pivot_gaps.values()) +
+                  sum(int(pg.values.sum()) for pg in vape_subcat_gaps.values()))
+    if not cat_pivot_gaps and not vape_subcat_gaps or total_gaps == 0:
         st.success("✅ Your shelf is fully stocked to target across all categories!")
     else:
         st.markdown("---")
@@ -920,6 +1025,8 @@ with tab3:
         st.caption("SKUs you've sold before (priority) or available on OCS — order 1 case each to fill gaps.")
 
         suggestions = []
+
+        # Non-Vapes suggestions
         for cat, pg in cat_pivot_gaps.items():
             for size in cat_sizes[cat]:
                 if size not in pg.index: continue
@@ -928,17 +1035,48 @@ with tab3:
                     gap = int(pg.at[size, strain])
                     if gap <= 0: continue
                     candidates = merged_raw[
-                        (merged_raw['Classification'] == cat) &
-                        (merged_raw['Product Size'] == size) &
-                        (merged_raw['Strain'] == strain) &
-                        (merged_raw['In Stock Qty'] == 0) &
-                        (merged_raw['Stock Status'] == 'YES')
+                        (merged_raw['Classification']==cat) &
+                        (merged_raw['Product Size']==size) &
+                        (merged_raw['Strain']==strain) &
+                        (merged_raw['In Stock Qty']==0) &
+                        (merged_raw['Stock Status']=='YES')
                     ].copy()
                     candidates['_sold'] = candidates['Sales (60 Days)'] > 0
                     candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
                     for _, r in candidates.head(gap).iterrows():
                         suggestions.append({
-                            'Category': cat, 'Size': size, 'Strain': strain,
+                            'Category': cat, 'Sub-Type': '', 'Size': size, 'Strain': strain,
+                            'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
+                            'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
+                            'Cases': 1, 'Pack Size': int(r['Pack Size']),
+                            'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
+                            'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
+                        })
+
+        # Vapes sub-category suggestions
+        for sc, pg in vape_subcat_gaps.items():
+            sc_sizes = vape_subcat_sizes.get(sc, [])
+            for size in sc_sizes:
+                if size not in pg.index: continue
+                for strain in STRAINS:
+                    if strain not in pg.columns: continue
+                    gap = int(pg.at[size, strain])
+                    if gap <= 0: continue
+                    cand_mask = (
+                        (merged_raw['Classification']=='Vapes') &
+                        (merged_raw['Product Size']==size) &
+                        (merged_raw['Strain']==strain) &
+                        (merged_raw['In Stock Qty']==0) &
+                        (merged_raw['Stock Status']=='YES')
+                    )
+                    if has_subcat:
+                        cand_mask &= (merged_raw['Sub-Category']==sc)
+                    candidates = merged_raw[cand_mask].copy()
+                    candidates['_sold'] = candidates['Sales (60 Days)'] > 0
+                    candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
+                    for _, r in candidates.head(gap).iterrows():
+                        suggestions.append({
+                            'Category': 'Vapes', 'Sub-Type': sc, 'Size': size, 'Strain': strain,
                             'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
                             'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
                             'Cases': 1, 'Pack Size': int(r['Pack Size']),
@@ -948,6 +1086,8 @@ with tab3:
 
         if suggestions:
             sug_df = pd.DataFrame(suggestions)
+            if sug_df['Sub-Type'].eq('').all():
+                sug_df = sug_df.drop(columns=['Sub-Type'])
             sug_df['Est. Cost'] = (sug_df['Cases'] * sug_df['Pack Size'] * sug_df['Unit Price'].fillna(0)).round(2)
             sug_df['Unit Price'] = sug_df['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) and x > 0 else '—')
             sug_df['Est. Cost']  = sug_df['Est. Cost'].map(lambda x: f'${x:,.2f}' if x > 0 else '—')
