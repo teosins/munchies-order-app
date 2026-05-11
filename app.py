@@ -1702,13 +1702,15 @@ with tab3:
                     candidates['_sold'] = candidates['Sales (60 Days)'] > 0
                     candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
                     for _, r in candidates.head(gap).iterrows():
+                        _prev = int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0
                         suggestions.append({
                             'Category': cat, 'Sub-Type': '', 'Size': size, 'Strain': strain,
                             'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
                             'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
                             'Cases': 1, 'Pack Size': int(r['Pack Size']),
                             'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
-                            'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
+                            'Prev. Sold (60d)': _prev,
+                            'Is New': _prev == 0,
                         })
 
         # Sub-category suggestions (Flower, Vapes, Topicals, etc.)
@@ -1733,17 +1735,29 @@ with tab3:
                     candidates['_sold'] = candidates['Sales (60 Days)'] > 0
                     candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
                     for _, r in candidates.head(gap).iterrows():
+                        _prev = int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0
                         suggestions.append({
                             'Category': cat, 'Sub-Type': sc, 'Size': size, 'Strain': strain,
                             'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
                             'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
                             'Cases': 1, 'Pack Size': int(r['Pack Size']),
                             'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
-                            'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
+                            'Prev. Sold (60d)': _prev,
+                            'Is New': _prev == 0,
                         })
 
         if suggestions:
             _has_subtype = any(s.get('Sub-Type') for s in suggestions)
+            _has_new     = any(s.get('Is New') for s in suggestions)
+
+            # ── legend ─────────────────────────────────────────
+            _leg_parts = ["<small>"]
+            _leg_parts.append("<span style='background:rgba(137,212,245,0.15);border:1px solid rgba(137,212,245,0.4);color:#89d4f5;padding:1px 7px;border-radius:4px;font-size:11px'>Previously carried</span>")
+            if _has_new:
+                _leg_parts.append("&nbsp;&nbsp;<span style='background:rgba(255,200,60,0.18);border:1px solid rgba(255,200,60,0.55);color:#ffc83c;padding:1px 7px;border-radius:4px;font-size:11px'>NEW — never ordered before</span>")
+            _leg_parts.append("</small>")
+            st.markdown(" ".join(_leg_parts), unsafe_allow_html=True)
+            st.markdown("<div style='margin-bottom:6px'></div>", unsafe_allow_html=True)
 
             # ── header ─────────────────────────────────────────
             _hw = [3.2, 0.85, 0.65, 0.6, 0.55, 0.75, 0.5]
@@ -1758,11 +1772,19 @@ with tab3:
                 _sku     = _sr['OCS Variant #']
                 _in_cart = _sku in st.session_state['menu_cart']
                 _up      = _sr.get('Unit Price') or 0
+                _is_new  = _sr.get('Is New', False)
                 _rc      = st.columns(_hw)
                 _label   = _sr['Product']
                 if _has_subtype and _sr.get('Sub-Type'):
                     _label = f"[{_sr['Sub-Type']}] {_label}"
-                _rc[0].caption(_label[:50])
+                # colour-coded product name badge
+                if _is_new:
+                    _badge_style = "background:rgba(255,200,60,0.18);border:1px solid rgba(255,200,60,0.55);color:#ffc83c;padding:2px 6px;border-radius:4px;font-size:11px"
+                    _badge_tag   = "<span style='background:rgba(255,200,60,0.35);color:#fff8e0;padding:0px 5px;border-radius:3px;font-size:10px;margin-right:4px;font-weight:600'>NEW</span>"
+                else:
+                    _badge_style = "background:rgba(137,212,245,0.1);border:1px solid rgba(137,212,245,0.25);color:#c8eaf8;padding:2px 6px;border-radius:4px;font-size:11px"
+                    _badge_tag   = ""
+                _rc[0].markdown(f"<span style='{_badge_style}'>{_badge_tag}{_label[:45]}</span>", unsafe_allow_html=True)
                 _rc[1].caption(f"{_sr['Category']} · {_sr['Size']}")
                 _rc[2].caption(_sr['Strain'])
                 _rc[3].caption(str(_sr.get('Prev. Sold (60d)', 0)))
