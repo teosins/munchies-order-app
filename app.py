@@ -576,6 +576,11 @@ with st.sidebar:
                          ('Concentrates','t_conc'),('Topicals','t_topicals'),
                          ('Oil','t_oil'),('Seeds','t_seeds')]:
             if _k in _ct: st.session_state[_sk] = int(_ct[_k])
+        for _encoded, _val in p.get('subcat_targets', {}).items():
+            if '||' in _encoded:
+                _scat, _ssc = _encoded.split('||', 1)
+                _ssk = f"sc_{_scat}_{_ssc}".replace(' ','_').replace('-','_').replace('/','_')
+                st.session_state[_ssk] = int(_val)
 
     if _prof_names:
         _sel = st.selectbox("Load a saved location", ["— select —"] + _prof_names, key="prof_select")
@@ -667,6 +672,25 @@ with st.sidebar:
         'Topicals': t_topicals, 'Oil': t_oil, 'Seeds': t_seeds,
     }
 
+    # ── sub-category targets ───────────────────────────────────
+    _SUBCAT_DEFS = [
+        ('Vapes',        ['Closed Loop Pods','Disposable Pens','510 Thread Cartridges'],                        21),
+        ('Pre-Roll',     ['Singles','Multipacks'],                                                               14),
+        ('Edibles',      ['Baked Goods','Chocolates','Soft Chews','Hard Chews','Confections'],                   14),
+        ('Topicals',     ['Creams And Lotions','Body Care','Face Care','Patches','Lip Care','Bath'],             30),
+        ('Concentrates', ['Shatter','Resin','Rosin','Wax','Distillate','Diamonds'],                             14),
+    ]
+
+    SUBCAT_TARGET = {}
+    for _scat, _scs, _sdef in _SUBCAT_DEFS:
+        with st.expander(f"🔹 {_scat} (by sub-category)"):
+            _sc1, _sc2 = st.columns(2)
+            for _si, _sc in enumerate(_scs):
+                _sk = f"sc_{_scat}_{_sc}".replace(' ','_').replace('-','_').replace('/','_')
+                SUBCAT_TARGET[(_scat, _sc)] = (_sc1 if _si % 2 == 0 else _sc2).number_input(
+                    _sc, value=st.session_state.get(_sk, _sdef),
+                    min_value=1, max_value=90, key=_sk)
+
     # ── save profile ──────────────────────────────────────────
     st.markdown("---")
     if st.button("💾 Save Profile", use_container_width=True):
@@ -687,6 +711,7 @@ with st.sidebar:
                 'Beverages': int(t_beverages), 'Capsules': int(t_capsules), 'Concentrates': int(t_conc),
                 'Topicals': int(t_topicals), 'Oil': int(t_oil), 'Seeds': int(t_seeds),
             },
+            'subcat_targets': {f"{_k[0]}||{_k[1]}": int(_v) for _k, _v in SUBCAT_TARGET.items()},
         }
         try:
             _save_profile(_prof_name, _settings)
@@ -789,7 +814,7 @@ merged_raw, ocs_df = load_raw(kova_bytes_raw, ocs_bytes_raw)
 
 # ── process data ──────────────────────────────────────────────
 @st.cache_data(show_spinner="Processing your data...")
-def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax):
+def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax, subcat_target=None):
     merged = load_raw(kova_bytes, ocs_bytes)[0]
     active = merged[merged['Sales (30 Days)'] > 0].copy()
     active['Weekly Vel'] = (active['Sales (30 Days)'] / 4).round(2)
@@ -812,7 +837,9 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax):
         if row['Classification'] == 'Flower':
             tgt = flower_size_target.get(row['Flower Size'], flower_size_target.get('other', 14))
         else:
-            tgt = target.get(row['Classification'], 14)
+            _sc = row['Sub-Category'] if 'Sub-Category' in row.index and pd.notna(row['Sub-Category']) and row['Sub-Category'] else ''
+            tgt = (subcat_target or {}).get((row['Classification'], _sc),
+                   target.get(row['Classification'], 14))
         if tier == 'A':
             needed = max(0, math.ceil(dv * tgt) - avail)
             cases  = math.ceil(needed / pack) if needed > 0 else 0
@@ -851,7 +878,7 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax):
 
     return order_df, deferred_df, all_active
 
-order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax)
+order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET)
 
 if order_df.empty:
     st.warning("No items need ordering based on current stock levels and settings.")
@@ -1182,7 +1209,7 @@ with tab2:
     st.markdown("### 📋 Suggested Order")
     st.caption("All items that need restocking based on velocity — no hard budget cap. Review the total before submitting.")
 
-    uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999)
+    uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999, SUBCAT_TARGET)
 
     if uncapped_df.empty:
         st.success("✅ Nothing needs restocking right now.")
