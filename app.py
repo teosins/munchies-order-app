@@ -687,9 +687,12 @@ with st.sidebar:
                 'Topicals': int(t_topicals), 'Oil': int(t_oil), 'Seeds': int(t_seeds),
             },
         }
-        _save_profile(_prof_name, _settings)
-        st.session_state.sb_profiles[_prof_name] = _settings
-        st.success(f"✅ Saved: {_prof_name}")
+        try:
+            _save_profile(_prof_name, _settings)
+            st.session_state.sb_profiles[_prof_name] = _settings
+            st.success(f"✅ Saved: {_prof_name}")
+        except Exception as _pe:
+            st.error(f"Save failed: {_pe}")
 
 # ── main ──────────────────────────────────────────────────────
 try:
