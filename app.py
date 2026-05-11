@@ -292,9 +292,9 @@ def _sync_from_stripe(user_id, debug=False):
         cid  = res.data[0]['stripe_customer_id']
         subs = _stripe.Subscription.list(customer=cid, limit=10)
         if not subs.data:
-            # Try searching by email in case customer was created twice
+            # Try all customers with this email in case a duplicate was created
             user_email = st.session_state.sb_user.email
-            customers  = _stripe.Customer.search(query=f'email:"{user_email}"', limit=10)
+            customers  = _stripe.Customer.list(email=user_email, limit=10)
             for c in customers.data:
                 subs2 = _stripe.Subscription.list(customer=c.id, limit=5)
                 if subs2.data:
