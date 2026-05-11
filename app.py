@@ -520,9 +520,13 @@ _CAT_SIZE_DEFS = {
         ('40x0.5g',30),('60x0.5g',30),('70x0.4g',30),('80x0.35g',30),
     ],
     'Edibles':      [
-        ('2.5mg',14),('5mg',14),('10mg',14),('20mg',14),('25mg',14),
-        ('40mg',14),('50mg',14),('80mg',14),('100mg',14),
-        ('150mg',14),('200mg',14),('250mg',14),('500mg',14),
+        # Single-unit packs (NxMg on portal = "N Pack" in SKU)
+        ('1 Pack',14),('2 Pack',14),('3 Pack',14),('4 Pack',14),
+        ('5 Pack',14),('6 Pack',14),('8 Pack',14),('10 Pack',14),('12 Pack',14),
+        # Multi-unit retail packs (e.g. "6x1 Pack", "10x1 Pack", "30x1 Pack")
+        ('2x1 Pack',21),('3x1 Pack',21),('4x1 Pack',21),('5x1 Pack',21),
+        ('6x1 Pack',21),('10x1 Pack',21),('12x1 Pack',21),
+        ('20x1 Pack',21),('30x1 Pack',30),
     ],
     'Topicals':     [('25ml',30),('50ml',30),('100ml',30),('250ml',30)],
     'Concentrates': [('0.5g',14),('1g',14),('2g',14),('3.5g',14)],
