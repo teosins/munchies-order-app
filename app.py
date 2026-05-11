@@ -186,9 +186,24 @@ if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
         st.markdown("<div class='login-title'>OPAL ORDER TOOL</div>", unsafe_allow_html=True)
         st.markdown("<div class='login-sub'>Sign in to continue</div>", unsafe_allow_html=True)
 
+        # pre-fill saved email from localStorage
+        import streamlit.components.v1 as _comp_login
+        _comp_login.html("""<script>
+        try {
+          var e = localStorage.getItem('opal_email');
+          if (e) {
+            var inputs = window.parent.document.querySelectorAll('input[type=text]');
+            if (inputs.length > 0) { inputs[0].value = e;
+              inputs[0].dispatchEvent(new Event('input', {bubbles:true})); }
+          }
+        } catch(ex) {}
+        </script>""", height=0)
+
         _mode = st.radio("", ["Sign In", "Create Account"], horizontal=True, label_visibility="collapsed")
-        _email = st.text_input("Email", placeholder="you@example.com")
+        _saved_email = st.session_state.get('_remembered_email', '')
+        _email = st.text_input("Email", value=_saved_email, placeholder="you@example.com")
         _pw    = st.text_input("Password", type="password", placeholder="••••••••")
+        _remember = st.checkbox("Remember my email", value=bool(_saved_email))
 
         if _mode == "Create Account":
             _pw2 = st.text_input("Confirm Password", type="password", placeholder="••••••••")
@@ -201,7 +216,7 @@ if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
                     try:
                         _r = _sb.auth.sign_up({"email": _email, "password": _pw})
                         if _r.user:
-                            st.success("Account created! Check your email to confirm, then sign in.")
+                            st.success("Account created! Sign in below.")
                         else:
                             st.error("Sign-up failed. Try again.")
                     except Exception as _e:
@@ -213,6 +228,16 @@ if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
                     st.session_state.sb_user          = _r.user
                     st.session_state.sb_access_token  = _r.session.access_token
                     st.session_state.sb_refresh_token = _r.session.refresh_token
+                    if _remember:
+                        st.session_state['_remembered_email'] = _email
+                        _comp_login.html(f"""<script>
+                        try {{ localStorage.setItem('opal_email', {repr(_email)}); }} catch(ex) {{}}
+                        </script>""", height=0)
+                    else:
+                        st.session_state.pop('_remembered_email', None)
+                        _comp_login.html("""<script>
+                        try {{ localStorage.removeItem('opal_email'); }} catch(ex) {{}}
+                        </script>""", height=0)
                     st.rerun()
                 except Exception as _e:
                     st.error("Invalid email or password.")
@@ -453,6 +478,54 @@ if not _is_active:
             st.rerun()
     st.stop()
 
+# ── sub-category definitions (module-level so save button can reference before widgets) ──
+_SUBCAT_DEFS = [
+    ('Vapes',        ['Closed Loop Pods','Disposable Pens','510 Thread Cartridges'],                    21),
+    ('Pre-Roll',     ['Singles','Multipacks'],                                                           14),
+    ('Edibles',      ['Baked Goods','Chocolates','Soft Chews','Hard Chews','Confections'],               14),
+    ('Topicals',     ['Creams And Lotions','Body Care','Face Care','Patches','Lip Care','Bath'],         30),
+    ('Concentrates', ['Shatter','Resin','Rosin','Wax','Distillate','Diamonds'],                         14),
+]
+
+def _build_settings_from_state(prof_name):
+    """Build a settings dict from current session_state widget keys."""
+    _prov = st.session_state.get('s_province', 'Ontario')
+    _prov_rate = PROVINCE_RATES.get(_prov)
+    return {
+        'name': prof_name,
+        'province': _prov,
+        'custom_tax_rate': st.session_state.get('s_custom_tax', 13.0) if _prov_rate is None else None,
+        'budget': int(st.session_state.get('s_budget', 30000)),
+        'shipping_cost': int(st.session_state.get('s_shipping', 0)),
+        'ship_in_budget': bool(st.session_state.get('s_ship_in_budget', False)),
+        'flower_targets': {
+            '1g': int(st.session_state.get('f1g', 7)),
+            '3.5g': int(st.session_state.get('f35g', 14)),
+            '5g': int(st.session_state.get('f5g', 14)),
+            '7g': int(st.session_state.get('f7g', 14)),
+            '14g': int(st.session_state.get('f14g', 21)),
+            '28g': int(st.session_state.get('f28g', 30)),
+            '30g': int(st.session_state.get('f30g', 30)),
+            'other': int(st.session_state.get('fother', 14)),
+        },
+        'category_targets': {
+            'Pre-Roll': int(st.session_state.get('t_preroll', 14)),
+            'Edibles': int(st.session_state.get('t_edibles', 14)),
+            'Vapes': int(st.session_state.get('t_vapes', 21)),
+            'Beverages': int(st.session_state.get('t_beverages', 14)),
+            'Capsules': int(st.session_state.get('t_capsules', 21)),
+            'Concentrates': int(st.session_state.get('t_conc', 14)),
+            'Topicals': int(st.session_state.get('t_topicals', 30)),
+            'Oil': int(st.session_state.get('t_oil', 21)),
+            'Seeds': int(st.session_state.get('t_seeds', 60)),
+        },
+        'subcat_targets': {
+            f"{_c}||{_sc}": int(st.session_state.get(
+                f"sc_{_c}_{_sc}".replace(' ','_').replace('-','_').replace('/','_'), _d))
+            for _c, _scs, _d in _SUBCAT_DEFS for _sc in _scs
+        },
+    }
+
 # show trial banner if trialing
 if _sub and _sub.get('status') == 'trialing' and _sub.get('trial_end'):
     try:
@@ -596,6 +669,15 @@ with st.sidebar:
 
     _prof_name = st.text_input("Store / Location Name", value="My Store", key="prof_name")
 
+    if st.button("💾 Save Profile", use_container_width=True, key="save_prof_top"):
+        _s = _build_settings_from_state(_prof_name)
+        try:
+            _save_profile(_prof_name, _s)
+            st.session_state.sb_profiles[_prof_name] = _s
+            st.success(f"✅ Saved: {_prof_name}")
+        except Exception as _pe:
+            st.error(f"Save failed: {_pe}")
+
     st.markdown("---")
     st.markdown("**📁 Upload Files**")
     kova_file = st.file_uploader("Cova Reorder Report (.xlsx)", type="xlsx", key="kova")
@@ -673,14 +755,6 @@ with st.sidebar:
     }
 
     # ── sub-category targets ───────────────────────────────────
-    _SUBCAT_DEFS = [
-        ('Vapes',        ['Closed Loop Pods','Disposable Pens','510 Thread Cartridges'],                        21),
-        ('Pre-Roll',     ['Singles','Multipacks'],                                                               14),
-        ('Edibles',      ['Baked Goods','Chocolates','Soft Chews','Hard Chews','Confections'],                   14),
-        ('Topicals',     ['Creams And Lotions','Body Care','Face Care','Patches','Lip Care','Bath'],             30),
-        ('Concentrates', ['Shatter','Resin','Rosin','Wax','Distillate','Diamonds'],                             14),
-    ]
-
     SUBCAT_TARGET = {}
     for _scat, _scs, _sdef in _SUBCAT_DEFS:
         with st.expander(f"🔹 {_scat} (by sub-category)"):
@@ -691,34 +765,6 @@ with st.sidebar:
                     _sc, value=st.session_state.get(_sk, _sdef),
                     min_value=1, max_value=90, key=_sk)
 
-    # ── save profile ──────────────────────────────────────────
-    st.markdown("---")
-    if st.button("💾 Save Profile", use_container_width=True):
-        _settings = {
-            'name': _prof_name,
-            'province': province,
-            'custom_tax_rate': (tax_rate * 100) if PROVINCE_RATES.get(province) is None else None,
-            'budget': int(budget),
-            'shipping_cost': int(shipping_cost),
-            'ship_in_budget': bool(ship_in_budget),
-            'flower_targets': {
-                '1g': int(t_flower_1g), '3.5g': int(t_flower_35g), '5g': int(t_flower_5g),
-                '7g': int(t_flower_7g), '14g': int(t_flower_14g),  '28g': int(t_flower_28g),
-                '30g': int(t_flower_30g), 'other': int(t_flower_other),
-            },
-            'category_targets': {
-                'Pre-Roll': int(t_preroll), 'Edibles': int(t_edibles), 'Vapes': int(t_vapes),
-                'Beverages': int(t_beverages), 'Capsules': int(t_capsules), 'Concentrates': int(t_conc),
-                'Topicals': int(t_topicals), 'Oil': int(t_oil), 'Seeds': int(t_seeds),
-            },
-            'subcat_targets': {f"{_k[0]}||{_k[1]}": int(_v) for _k, _v in SUBCAT_TARGET.items()},
-        }
-        try:
-            _save_profile(_prof_name, _settings)
-            st.session_state.sb_profiles[_prof_name] = _settings
-            st.success(f"✅ Saved: {_prof_name}")
-        except Exception as _pe:
-            st.error(f"Save failed: {_pe}")
 
 # ── main ──────────────────────────────────────────────────────
 try:
