@@ -455,8 +455,11 @@ if not _is_active:
 
 # show trial banner if trialing
 if _sub and _sub.get('status') == 'trialing' and _sub.get('trial_end'):
-    _days_left = max(0, (_dt.fromisoformat(_sub['trial_end']) - _dt.utcnow()).days)
-    st.info(f"✨ Free trial — {_days_left} day{'s' if _days_left != 1 else ''} remaining. Your card won't be charged until the trial ends.")
+    try:
+        _days_left = max(0, (_dt.fromisoformat(_sub['trial_end']) - _dt.utcnow()).days)
+        st.info(f"✨ Free trial — {_days_left} day{'s' if _days_left != 1 else ''} remaining. Your card won't be charged until the trial ends.")
+    except Exception:
+        pass
 
 # ── profile helpers ────────────────────────────────────────────
 def _load_profiles():
