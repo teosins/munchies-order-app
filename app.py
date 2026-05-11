@@ -472,10 +472,11 @@ def _load_profiles():
 
 def _save_profile(name, settings):
     uid = st.session_state.sb_user.id
-    _sb.table('location_profiles').upsert(
-        {'id': uid, 'store_name': name, 'settings': settings},
-        on_conflict='id,store_name'
-    ).execute()
+    existing = _sb.table('location_profiles').select('store_name').eq('id', uid).eq('store_name', name).execute()
+    if existing.data:
+        _sb.table('location_profiles').update({'settings': settings}).eq('id', uid).eq('store_name', name).execute()
+    else:
+        _sb.table('location_profiles').insert({'id': uid, 'store_name': name, 'settings': settings}).execute()
 
 def _delete_profile(name):
     uid = st.session_state.sb_user.id
