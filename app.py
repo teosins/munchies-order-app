@@ -240,20 +240,34 @@ def _check_sub(user_id):
     res = _sb.table('user_subscriptions').select('*').eq('user_id', user_id).execute()
     return res.data[0] if res.data else None
 
+def _sf(obj, key, default=None):
+    """Safe field access for stripe-python 7.x objects (no .get() method)."""
+    try:
+        return obj[key]
+    except (KeyError, TypeError, AttributeError):
+        return default
+
+def _sub_to_row(user_id, cid, sub):
+    te = _sf(sub, 'trial_end')
+    pe = _sf(sub, 'current_period_end')
+    plan = 'yearly' if _sf(sub['items']['data'][0], 'price', {})['id'] == _PRICE_YEARLY else 'monthly'
+    return {
+        'user_id': user_id,
+        'stripe_customer_id': cid,
+        'stripe_subscription_id': sub['id'],
+        'status': sub['status'],
+        'plan': plan,
+        'trial_end': _dt.utcfromtimestamp(te).isoformat() if te else None,
+        'current_period_end': _dt.utcfromtimestamp(pe).isoformat() if pe else None,
+    }
+
 def _sync_sub(user_id, session_id):
     try:
         sess = _stripe.checkout.Session.retrieve(session_id, expand=['subscription'])
         sub  = sess.subscription
         if sub:
-            plan = 'yearly' if sub['items']['data'][0]['price']['id'] == _PRICE_YEARLY else 'monthly'
-            _sb.table('user_subscriptions').upsert({
-                'user_id': user_id,
-                'stripe_subscription_id': sub['id'],
-                'status': sub['status'],
-                'plan': plan,
-                'trial_end': _dt.utcfromtimestamp(sub['trial_end']).isoformat() if sub.get('trial_end') else None,
-                'current_period_end': _dt.utcfromtimestamp(sub['current_period_end']).isoformat(),
-            }).execute()
+            cid = _sf(sess, 'customer') or ''
+            _sb.table('user_subscriptions').upsert(_sub_to_row(user_id, cid, sub)).execute()
     except Exception as _e:
         st.error(f"Could not verify payment: {_e}")
 
@@ -304,16 +318,7 @@ def _sync_from_stripe(user_id, debug=False):
         if subs.data:
             # Pick active/trialing first, else most recent
             sub = next((s for s in subs.data if s['status'] in ('active','trialing')), subs.data[0])
-            plan = 'yearly' if sub['items']['data'][0]['price']['id'] == _PRICE_YEARLY else 'monthly'
-            _sb.table('user_subscriptions').upsert({
-                'user_id': user_id,
-                'stripe_customer_id': cid,
-                'stripe_subscription_id': sub['id'],
-                'status': sub['status'],
-                'plan': plan,
-                'trial_end': _dt.utcfromtimestamp(sub['trial_end']).isoformat() if sub.get('trial_end') else None,
-                'current_period_end': _dt.utcfromtimestamp(sub['current_period_end']).isoformat(),
-            }).execute()
+            _sb.table('user_subscriptions').upsert(_sub_to_row(user_id, cid, sub)).execute()
             return sub['status'] in ('active', 'trialing')
         else:
             if debug:
