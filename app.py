@@ -8,6 +8,133 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 st.set_page_config(page_title="OPAL Order Tool", page_icon="💎", layout="wide")
 
+st.markdown("""
+<style>
+/* ── hide default streamlit chrome ── */
+#MainMenu, footer, header {visibility: hidden;}
+
+/* ── app background ── */
+.stApp {
+    background: radial-gradient(ellipse at top left, #0e0e1a 0%, #08080f 60%);
+}
+
+/* ── sidebar ── */
+[data-testid="stSidebar"] {
+    background: #0c0c18 !important;
+    border-right: 1px solid rgba(137,212,245,0.15);
+}
+[data-testid="stSidebar"] .stMarkdown h2 {
+    background: linear-gradient(135deg, #89d4f5, #c9a6ff, #f5a6d3);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-size: 1.3rem;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+}
+
+/* ── metric cards ── */
+[data-testid="metric-container"] {
+    background: rgba(137,212,245,0.04);
+    border: 1px solid rgba(137,212,245,0.18);
+    border-radius: 10px;
+    padding: 14px 18px;
+    box-shadow: 0 0 18px rgba(137,212,245,0.06);
+}
+[data-testid="metric-container"] [data-testid="stMetricLabel"] {
+    color: #89d4f5 !important;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    color: #e8e8f0 !important;
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+
+/* ── tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: #12121e;
+    border-radius: 10px;
+    padding: 4px;
+    gap: 4px;
+    border: 1px solid rgba(137,212,245,0.12);
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 7px;
+    color: #888 !important;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 8px 20px;
+}
+.stTabs [aria-selected="true"] {
+    background: rgba(137,212,245,0.1) !important;
+    color: #89d4f5 !important;
+    border-bottom: 2px solid #89d4f5 !important;
+}
+
+/* ── download buttons ── */
+[data-testid="stDownloadButton"] button {
+    background: linear-gradient(135deg, rgba(137,212,245,0.15), rgba(201,166,255,0.15));
+    border: 1px solid rgba(137,212,245,0.35);
+    color: #89d4f5 !important;
+    border-radius: 8px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+}
+[data-testid="stDownloadButton"] button:hover {
+    background: linear-gradient(135deg, rgba(137,212,245,0.28), rgba(201,166,255,0.28));
+    border-color: #89d4f5;
+    box-shadow: 0 0 16px rgba(137,212,245,0.25);
+}
+
+/* ── expanders ── */
+[data-testid="stExpander"] {
+    border: 1px solid rgba(137,212,245,0.15) !important;
+    border-radius: 10px !important;
+    background: rgba(137,212,245,0.02);
+}
+
+/* ── multiselect ── */
+[data-baseweb="select"] {
+    background: #12121e;
+}
+[data-baseweb="tag"] {
+    background: rgba(137,212,245,0.15) !important;
+    border: 1px solid rgba(137,212,245,0.3) !important;
+    color: #89d4f5 !important;
+}
+
+/* ── section headings ── */
+.stMarkdown h3 {
+    background: linear-gradient(135deg, #89d4f5, #c9a6ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: 0.06em;
+}
+
+/* ── dataframe ── */
+[data-testid="stDataFrame"] {
+    border: 1px solid rgba(137,212,245,0.12);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* ── number inputs & selectbox ── */
+[data-testid="stNumberInput"] input,
+[data-baseweb="select"] div {
+    background: #12121e !important;
+    border-color: rgba(137,212,245,0.2) !important;
+}
+
+/* ── dividers ── */
+hr {
+    border-color: rgba(137,212,245,0.12) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── styles ────────────────────────────────────────────────────
 def _f(color='000000', bold=False, sz=10): return Font(color=color, bold=bold, size=sz)
 def _p(color): return PatternFill('solid', fgColor=color)
@@ -47,8 +174,9 @@ with st.sidebar:
         st.image("opal_logo.png", use_container_width=True)
     except Exception:
         st.markdown("## 💎 OPAL Order Tool")
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     st.markdown("---")
-    st.header("📁 Upload Files")
+    st.markdown("**📁 Upload Files**")
     kova_file = st.file_uploader("Cova Reorder Report (.xlsx)", type="xlsx", key="kova")
     ocs_file  = st.file_uploader("OCS Catalogue (.xlsx)",       type="xlsx", key="ocs")
 
@@ -123,10 +251,14 @@ with st.sidebar:
 
 # ── main ──────────────────────────────────────────────────────
 try:
-    st.image("opal_logo.png", width=320)
+    st.image("opal_logo.png", width=280)
 except Exception:
-    st.title("💎 OPAL Order Tool")
-st.caption(f"Generating orders for: {date.today().strftime('%B %d, %Y')}")
+    st.markdown("# 💎 OPAL Order Tool")
+st.markdown(
+    f"<p style='color:#666;font-size:0.85rem;letter-spacing:0.08em;margin-top:-8px'>"
+    f"ORDER TOOL &nbsp;·&nbsp; {date.today().strftime('%B %d, %Y').upper()}</p>",
+    unsafe_allow_html=True
+)
 
 if not kova_file or not ocs_file:
     st.info("Upload your **Cova Reorder Report** and **OCS Catalogue** in the sidebar to get started with OPAL.")
