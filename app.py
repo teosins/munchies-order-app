@@ -1734,85 +1734,132 @@ with tab3:
         if suggestions:
             _has_subtype = any(s.get('Sub-Type') for s in suggestions)
 
-            # ── header row ─────────────────────────────────────
-            _hw = [3.5, 0.9, 0.65, 0.7, 0.7, 0.8, 0.55]
+            # ── header ─────────────────────────────────────────
+            _hw = [3.2, 0.85, 0.65, 0.6, 0.55, 0.75, 0.5]
             _hh = st.columns(_hw)
-            for _lbl, _col in zip(["Product","Category","Size","Strain","Prev Sold","Est. Cost",""], _hh):
+            for _lbl, _col in zip(["Product","Category · Size","Strain","Prev Sold","Cases","Est. Cost",""], _hh):
                 _col.markdown(f"<small><b>{_lbl}</b></small>", unsafe_allow_html=True)
             st.markdown("<hr style='margin:2px 0 6px 0;border-color:rgba(137,212,245,0.15)'>",
                         unsafe_allow_html=True)
 
             # ── suggestion rows ─────────────────────────────────
             for _si, _sr in enumerate(suggestions):
-                _sku    = _sr['OCS Variant #']
+                _sku     = _sr['OCS Variant #']
                 _in_cart = _sku in st.session_state['menu_cart']
-                _up     = _sr.get('Unit Price') or 0
-                _est    = _sr['Cases'] * _sr['Pack Size'] * _up
-                _rc     = st.columns(_hw)
-                _label  = _sr['Product']
+                _up      = _sr.get('Unit Price') or 0
+                _rc      = st.columns(_hw)
+                _label   = _sr['Product']
                 if _has_subtype and _sr.get('Sub-Type'):
                     _label = f"[{_sr['Sub-Type']}] {_label}"
-                _rc[0].caption(_label[:52])
-                _rc[1].caption(f"{_sr['Category']} {_sr['Size']}")
-                _rc[2].caption(_sr['Size'])
-                _rc[3].caption(_sr['Strain'])
-                _rc[4].caption(str(_sr.get('Prev. Sold (60d)', 0)))
+                _rc[0].caption(_label[:50])
+                _rc[1].caption(f"{_sr['Category']} · {_sr['Size']}")
+                _rc[2].caption(_sr['Strain'])
+                _rc[3].caption(str(_sr.get('Prev. Sold (60d)', 0)))
+                _qty = _rc[4].number_input("", value=st.session_state.get(f"sug_q_{_si}", 1),
+                                           min_value=1, max_value=99,
+                                           key=f"sug_q_{_si}", label_visibility="collapsed")
+                _est = _qty * _sr['Pack Size'] * _up
                 _rc[5].caption(f"${_est:,.2f}" if _est else "—")
-                if _rc[6].button("✓" if _in_cart else "+",
-                                 key=f"sg_{_si}", use_container_width=True,
+                _btn_lbl = "✓" if _in_cart else "+"
+                if _rc[6].button(_btn_lbl, key=f"sg_{_si}", use_container_width=True,
                                  help="Remove from cart" if _in_cart else "Add to cart"):
                     if _in_cart:
                         del st.session_state['menu_cart'][_sku]
                     else:
-                        st.session_state['menu_cart'][_sku] = dict(_sr)
+                        _entry = dict(_sr)
+                        _entry['Cases'] = _qty
+                        st.session_state['menu_cart'][_sku] = _entry
                     st.rerun()
-
-            # ── cart ───────────────────────────────────────────
-            _cart = st.session_state['menu_cart']
-            if _cart:
-                st.markdown("---")
-                st.markdown("#### 🛒 Menu Order Cart")
-                _cart_total = 0.0
-                _ch = st.columns([3.5, 1.0, 0.8, 0.6, 0.8, 0.45])
-                for _lbl, _c in zip(["Product","Category · Size","Strain","Cases","Est. Cost",""], _ch):
-                    _c.markdown(f"<small><b>{_lbl}</b></small>", unsafe_allow_html=True)
-                st.markdown("<hr style='margin:2px 0 6px 0;border-color:rgba(137,212,245,0.15)'>",
-                            unsafe_allow_html=True)
-                for _csku, _ci in list(_cart.items()):
-                    _cup  = _ci.get('Unit Price') or 0
-                    _ccases = _ci.get('Cases', 1)
-                    _cest = _ccases * _ci['Pack Size'] * _cup
-                    _cart_total += _cest
-                    _cr = st.columns([3.5, 1.0, 0.8, 0.6, 0.8, 0.45])
-                    _cr[0].caption(_ci['Product'][:50])
-                    _cr[1].caption(f"{_ci['Category']} · {_ci['Size']}")
-                    _cr[2].caption(_ci['Strain'])
-                    _new_c = _cr[3].number_input("", value=_ccases, min_value=1, max_value=99,
-                                                  key=f"cart_c_{_csku}", label_visibility="collapsed")
-                    if _new_c != _ccases:
-                        st.session_state['menu_cart'][_csku]['Cases'] = _new_c
-                        st.rerun()
-                    _cr[4].caption(f"${_cest:,.2f}" if _cest else "—")
-                    if _cr[5].button("✕", key=f"crm_{_csku}", use_container_width=True):
-                        del st.session_state['menu_cart'][_csku]
-                        st.rerun()
-
-                st.markdown(f"**Cart Total: ${_cart_total:,.2f}** &nbsp;·&nbsp; {len(_cart)} SKU(s)",
-                            unsafe_allow_html=True)
-
-                _cart_dl  = pd.DataFrame([{'SKU': k, 'Quantity': v['Cases']} for k, v in _cart.items()])
-                _cart_buf = io.BytesIO()
-                with pd.ExcelWriter(_cart_buf, engine='openpyxl') as _cw:
-                    _cart_dl.to_excel(_cw, sheet_name='MasterCatalogue', index=False)
-                _cart_buf.seek(0)
-                st.download_button(
-                    "📤 Download Cart as OCS Upload File (.xlsx)",
-                    data=_cart_buf,
-                    file_name=f'OCS_MenuOrder_{today2.strftime("%Y%m%d")}.xlsx',
-                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    use_container_width=True,
-                )
-            else:
-                st.info("Click **+** next to any SKU above to build your order.", icon="🛒")
         else:
             st.info("No matching SKUs found in the OCS catalogue to fill the gaps. Try adjusting your targets or check the catalogue for availability.")
+
+        # ── menu cart ──────────────────────────────────────────
+        _cart = st.session_state.get('menu_cart', {})
+        if _cart:
+            st.markdown("---")
+            st.markdown("#### 🛒 Added to Order")
+            _cart_total = 0.0
+            _ch = st.columns([3.2, 1.0, 0.7, 0.55, 0.75, 0.45])
+            for _lbl, _c in zip(["Product","Category · Size","Strain","Cases","Est. Cost",""], _ch):
+                _c.markdown(f"<small><b>{_lbl}</b></small>", unsafe_allow_html=True)
+            st.markdown("<hr style='margin:2px 0 6px 0;border-color:rgba(137,212,245,0.15)'>",
+                        unsafe_allow_html=True)
+            for _csku, _ci in list(_cart.items()):
+                _cup    = _ci.get('Unit Price') or 0
+                _ccases = _ci.get('Cases', 1)
+                _cest   = _ccases * _ci['Pack Size'] * _cup
+                _cart_total += _cest
+                _cr = st.columns([3.2, 1.0, 0.7, 0.55, 0.75, 0.45])
+                _cr[0].caption(_ci['Product'][:50])
+                _cr[1].caption(f"{_ci['Category']} · {_ci['Size']}")
+                _cr[2].caption(_ci['Strain'])
+                _new_c = _cr[3].number_input("", value=_ccases, min_value=1, max_value=99,
+                                              key=f"cart_c_{_csku}", label_visibility="collapsed")
+                if _new_c != _ccases:
+                    st.session_state['menu_cart'][_csku]['Cases'] = _new_c
+                    st.rerun()
+                _cr[4].caption(f"${_cest:,.2f}" if _cest else "—")
+                if _cr[5].button("✕", key=f"crm_{_csku}", use_container_width=True):
+                    del st.session_state['menu_cart'][_csku]
+                    st.rerun()
+            st.caption(f"Menu additions: {len(_cart)} SKU(s) · ${_cart_total:,.2f}")
+
+        # ── full combined order preview ─────────────────────────
+        st.markdown("---")
+        st.markdown("#### 📋 Full Order Preview")
+        st.caption("Everything that will be on the OCS upload file — your replenishment order + any menu additions.")
+
+        _full_rows = []
+        if not order_df.empty:
+            for _, _or in order_df.iterrows():
+                _full_rows.append({
+                    'Source': 'Auto',
+                    'Product': _or.get('Product',''),
+                    'Category': _or.get('Classification',''),
+                    'Size': _or.get('Product Size',''),
+                    'Strain': _or.get('Strain',''),
+                    'Cases': int(_or.get('Cases', 1)),
+                    'Unit Price': _or.get('Unit Price', None),
+                    'Pack Size': int(_or.get('Pack Size', 1)),
+                    'SKU': _or.get('Supplier Sku',''),
+                })
+        for _msku, _mi in _cart.items():
+            _full_rows.append({
+                'Source': 'Menu',
+                'Product': _mi.get('Product',''),
+                'Category': _mi.get('Category',''),
+                'Size': _mi.get('Size',''),
+                'Strain': _mi.get('Strain',''),
+                'Cases': int(_mi.get('Cases',1)),
+                'Unit Price': _mi.get('Unit Price', None),
+                'Pack Size': int(_mi.get('Pack Size',1)),
+                'SKU': _msku,
+            })
+
+        if _full_rows:
+            _full_df = pd.DataFrame(_full_rows)
+            _full_df['Est. Cost'] = (_full_df['Cases'] * _full_df['Pack Size'] *
+                                      _full_df['Unit Price'].fillna(0)).round(2)
+            _disp = _full_df[['Source','Product','Category','Size','Strain','Cases','Est. Cost']].copy()
+            _disp['Est. Cost'] = _disp['Est. Cost'].map(lambda x: f'${x:,.2f}' if x > 0 else '—')
+            st.dataframe(_disp, hide_index=True, use_container_width=True)
+
+            _total_cost = _full_df['Est. Cost'].sum()
+            st.markdown(f"**Total: ${_total_cost:,.2f}** &nbsp;·&nbsp; {len(_full_df)} SKU(s) &nbsp;·&nbsp; "
+                        f"{int(_full_df['Cases'].sum())} cases",
+                        unsafe_allow_html=True)
+
+            _combined_upload = _full_df[['SKU','Cases']].rename(columns={'Cases':'Quantity'})
+            _combined_buf = io.BytesIO()
+            with pd.ExcelWriter(_combined_buf, engine='openpyxl') as _fw:
+                _combined_upload.to_excel(_fw, sheet_name='MasterCatalogue', index=False)
+            _combined_buf.seek(0)
+            st.download_button(
+                "📤 Download Full OCS Upload File (.xlsx)",
+                data=_combined_buf,
+                file_name=f'OCS_FullOrder_{today2.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+            )
+        else:
+            st.info("No order items yet — upload your files and set targets to generate an order.")
