@@ -913,8 +913,8 @@ def load_raw(kova_bytes, ocs_bytes):
     kova_ocs['Supplier Sku'] = kova_ocs['Supplier Sku'].str.strip()
     ocs['OCS Variant Number'] = ocs['OCS Variant Number'].str.strip()
     ocs_cols = ['OCS Variant Number','OCS Item Number','Unit Price','Pack Size','Stock Status','Plant Type']
-    for _opt in ['Sub-Category']:
-        if _opt in ocs.columns:
+    for _opt in ['Sub-Category','Classification','Category','Product','Product Name','Variant Name','Brand']:
+        if _opt in ocs.columns and _opt not in ocs_cols:
             ocs_cols.append(_opt)
     merged = kova_ocs.merge(ocs[ocs_cols], left_on='Supplier Sku', right_on='OCS Variant Number', how='left')
     if 'Sub-Category' not in merged.columns:
@@ -965,6 +965,27 @@ def load_raw(kova_bytes, ocs_bytes):
     merged['Strain'] = merged.apply(map_strain, axis=1)
     merged['Pack Size']  = pd.to_numeric(merged['Pack Size'],  errors='coerce').fillna(1).astype(int)
     merged['Unit Price'] = pd.to_numeric(merged['Unit Price'], errors='coerce')
+
+    # Enrich full OCS catalogue so Menu Builder can suggest SKUs never in Kova
+    ocs['Product Size'] = ocs['OCS Variant Number'].apply(extract_product_size)
+    ocs['Strain']       = ocs.apply(lambda r: map_strain({
+        'Plant Type': r.get('Plant Type', ''),
+        'Product': r.get('Product', r.get('Product Name', r.get('Variant Name', ''))),
+    }), axis=1)
+    ocs['Pack Size']    = pd.to_numeric(ocs['Pack Size'],  errors='coerce').fillna(1).astype(int)
+    ocs['Unit Price']   = pd.to_numeric(ocs['Unit Price'], errors='coerce')
+    # Normalise Classification: OCS may call it 'Category'
+    if 'Classification' not in ocs.columns and 'Category' in ocs.columns:
+        ocs['Classification'] = ocs['Category']
+    # Normalise product name
+    if 'Product' not in ocs.columns:
+        for _pn in ['Product Name', 'Variant Name']:
+            if _pn in ocs.columns:
+                ocs['Product'] = ocs[_pn]
+                break
+    if 'Product' not in ocs.columns:
+        ocs['Product'] = ocs['OCS Variant Number']
+
     return merged, ocs
 
 kova_bytes_raw = kova_file.read()
@@ -1683,6 +1704,38 @@ with tab3:
         st.caption("SKUs you've sold before (priority) or available on OCS — order 1 case each to fill gaps.")
 
         suggestions = []
+        _on_shelf_skus = set(merged_raw[merged_raw['In Stock Qty'] > 0]['Supplier Sku'].tolist())
+        _ocs_has_class = 'Classification' in ocs_df.columns
+
+        def _append_suggestion(cat, sc, size, strain, r, prev=0, is_new=False, sku_col='Supplier Sku'):
+            suggestions.append({
+                'Category': cat, 'Sub-Type': sc, 'Size': size, 'Strain': strain,
+                'Product': r.get('Product',''),
+                'OCS Variant #': r.get(sku_col, r.get('OCS Variant Number','')),
+                'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
+                'Cases': 1, 'Pack Size': int(r.get('Pack Size', 1)),
+                'Unit Price': r.get('Unit Price') if pd.notna(r.get('Unit Price')) else None,
+                'Prev. Sold (60d)': prev,
+                'Is New': is_new,
+            })
+
+        def _ocs_supplement(cat, sc, size, strain, needed, exclude_skus):
+            """Pull brand-new OCS SKUs to fill any remaining gap slots."""
+            if needed <= 0 or not _ocs_has_class: return
+            _mask = (
+                (ocs_df['Classification']==cat) &
+                (ocs_df['Product Size']==size) &
+                (ocs_df['Strain']==strain) &
+                (ocs_df['Stock Status']=='YES') &
+                ~ocs_df['OCS Variant Number'].isin(exclude_skus) &
+                ~ocs_df['OCS Variant Number'].isin(_on_shelf_skus)
+            )
+            if sc and 'Sub-Category' in ocs_df.columns:
+                _mask &= (ocs_df['Sub-Category']==sc)
+            for _, r in ocs_df[_mask].head(needed).iterrows():
+                _append_suggestion(cat, sc, size, strain, r, prev=0, is_new=True,
+                                   sku_col='OCS Variant Number')
+                exclude_skus.add(r['OCS Variant Number'])
 
         # Flat-category suggestions
         for cat, pg in cat_pivot_gaps.items():
@@ -1701,17 +1754,14 @@ with tab3:
                     ].copy()
                     candidates['_sold'] = candidates['Sales (60 Days)'] > 0
                     candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
+                    _used = set()
                     for _, r in candidates.head(gap).iterrows():
                         _prev = int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0
-                        suggestions.append({
-                            'Category': cat, 'Sub-Type': '', 'Size': size, 'Strain': strain,
-                            'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
-                            'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
-                            'Cases': 1, 'Pack Size': int(r['Pack Size']),
-                            'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
-                            'Prev. Sold (60d)': _prev,
-                            'Is New': _prev == 0,
-                        })
+                        _append_suggestion(cat, '', size, strain, r, prev=_prev, is_new=(_prev==0))
+                        _used.add(r['Supplier Sku'])
+                    _remaining = gap - len(_used)
+                    _ocs_supplement(cat, '', size, strain, _remaining,
+                                    _used | {s['OCS Variant #'] for s in suggestions})
 
         # Sub-category suggestions (Flower, Vapes, Topicals, etc.)
         for (cat, sc), pg in subcat_gaps.items():
@@ -1734,17 +1784,14 @@ with tab3:
                     candidates = merged_raw[cand_mask].copy()
                     candidates['_sold'] = candidates['Sales (60 Days)'] > 0
                     candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
+                    _used = set()
                     for _, r in candidates.head(gap).iterrows():
                         _prev = int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0
-                        suggestions.append({
-                            'Category': cat, 'Sub-Type': sc, 'Size': size, 'Strain': strain,
-                            'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
-                            'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
-                            'Cases': 1, 'Pack Size': int(r['Pack Size']),
-                            'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
-                            'Prev. Sold (60d)': _prev,
-                            'Is New': _prev == 0,
-                        })
+                        _append_suggestion(cat, sc, size, strain, r, prev=_prev, is_new=(_prev==0))
+                        _used.add(r['Supplier Sku'])
+                    _remaining = gap - len(_used)
+                    _ocs_supplement(cat, sc, size, strain, _remaining,
+                                    _used | {s['OCS Variant #'] for s in suggestions})
 
         if suggestions:
             _has_subtype = any(s.get('Sub-Type') for s in suggestions)
