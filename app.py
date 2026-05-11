@@ -136,6 +136,107 @@ hr {
 </style>
 """, unsafe_allow_html=True)
 
+# ── supabase auth ─────────────────────────────────────────────
+from supabase import create_client
+
+@st.cache_resource
+def _init_sb():
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
+_sb = _init_sb()
+
+def _restore_session():
+    tok = st.session_state.get('sb_access_token')
+    ref = st.session_state.get('sb_refresh_token')
+    if tok and ref:
+        try:
+            _sb.auth.set_session(tok, ref)
+            st.session_state.sb_user = _sb.auth.get_user().user
+        except Exception:
+            for k in ('sb_access_token','sb_refresh_token','sb_user'):
+                st.session_state.pop(k, None)
+
+_restore_session()
+
+if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
+    st.markdown("""
+    <style>
+    .login-wrap {
+        max-width: 400px; margin: 80px auto; padding: 40px;
+        background: #12121e; border: 1px solid rgba(137,212,245,0.2);
+        border-radius: 16px; box-shadow: 0 0 40px rgba(137,212,245,0.08);
+    }
+    .login-title {
+        background: linear-gradient(135deg,#89d4f5,#c9a6ff,#f5a6d3);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        font-size: 1.6rem; font-weight: 700; letter-spacing: 0.1em; text-align: center;
+        margin-bottom: 6px;
+    }
+    .login-sub { color: #666; text-align: center; font-size: 0.82rem;
+                 letter-spacing: 0.06em; margin-bottom: 28px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    _lc1, _lc2, _lc3 = st.columns([1, 2, 1])
+    with _lc2:
+        try:
+            st.image("opal_logo.png", use_container_width=True)
+        except Exception:
+            pass
+        st.markdown("<div class='login-title'>OPAL ORDER TOOL</div>", unsafe_allow_html=True)
+        st.markdown("<div class='login-sub'>Sign in to continue</div>", unsafe_allow_html=True)
+
+        _mode = st.radio("", ["Sign In", "Create Account"], horizontal=True, label_visibility="collapsed")
+        _email = st.text_input("Email", placeholder="you@example.com")
+        _pw    = st.text_input("Password", type="password", placeholder="••••••••")
+
+        if _mode == "Create Account":
+            _pw2 = st.text_input("Confirm Password", type="password", placeholder="••••••••")
+            if st.button("Create Account", use_container_width=True):
+                if _pw != _pw2:
+                    st.error("Passwords don't match.")
+                elif len(_pw) < 6:
+                    st.error("Password must be at least 6 characters.")
+                else:
+                    try:
+                        _r = _sb.auth.sign_up({"email": _email, "password": _pw})
+                        if _r.user:
+                            st.success("Account created! Check your email to confirm, then sign in.")
+                        else:
+                            st.error("Sign-up failed. Try again.")
+                    except Exception as _e:
+                        st.error(str(_e))
+        else:
+            if st.button("Sign In", use_container_width=True):
+                try:
+                    _r = _sb.auth.sign_in_with_password({"email": _email, "password": _pw})
+                    st.session_state.sb_user          = _r.user
+                    st.session_state.sb_access_token  = _r.session.access_token
+                    st.session_state.sb_refresh_token = _r.session.refresh_token
+                    st.rerun()
+                except Exception as _e:
+                    st.error("Invalid email or password.")
+    st.stop()
+
+# ── profile helpers ────────────────────────────────────────────
+def _load_profiles():
+    try:
+        uid = st.session_state.sb_user.id
+        rows = _sb.table('location_profiles').select('store_name,settings').eq('id', uid).order('store_name').execute()
+        return {r['store_name']: r['settings'] for r in rows.data}
+    except Exception:
+        return {}
+
+def _save_profile(name, settings):
+    uid = st.session_state.sb_user.id
+    _sb.table('location_profiles').upsert(
+        {'id': uid, 'store_name': name, 'settings': settings}
+    ).execute()
+
+def _delete_profile(name):
+    uid = st.session_state.sb_user.id
+    _sb.table('location_profiles').delete().eq('id', uid).eq('store_name', name).execute()
+
 # ── styles ────────────────────────────────────────────────────
 def _f(color='000000', bold=False, sz=10): return Font(color=color, bold=bold, size=sz)
 def _p(color): return PatternFill('solid', fgColor=color)
@@ -195,34 +296,53 @@ with st.sidebar:
 
     # ── location profiles ─────────────────────────────────────
     st.markdown("---")
-    st.markdown("**📍 Location Profile**")
+    st.markdown(f"**📍 Location Profiles**")
+    st.caption(f"Signed in as {st.session_state.sb_user.email}")
 
-    _prof_upload = st.file_uploader("Load saved profile (.json)", type="json", key="prof_upload")
-    if _prof_upload is not None:
-        try:
-            _p = json.loads(_prof_upload.read())
-            if _p.get('province') in _PROVINCE_LIST:
-                st.session_state['s_province'] = _p['province']
-            if _p.get('custom_tax_rate') is not None:
-                st.session_state['s_custom_tax'] = float(_p['custom_tax_rate'])
-            st.session_state['s_budget']         = int(_p.get('budget', 30000))
-            st.session_state['s_shipping']       = int(_p.get('shipping_cost', 0))
-            st.session_state['s_ship_in_budget'] = bool(_p.get('ship_in_budget', False))
-            st.session_state['prof_name']        = _p.get('name', 'My Store')
-            _ft = _p.get('flower_targets', {})
-            for _k, _sk in [('1g','f1g'),('3.5g','f35g'),('5g','f5g'),('7g','f7g'),
-                             ('14g','f14g'),('28g','f28g'),('30g','f30g'),('other','fother')]:
-                if _k in _ft: st.session_state[_sk] = int(_ft[_k])
-            _ct = _p.get('category_targets', {})
-            for _k, _sk in [('Pre-Roll','t_preroll'),('Edibles','t_edibles'),('Vapes','t_vapes'),
-                             ('Beverages','t_beverages'),('Capsules','t_capsules'),
-                             ('Concentrates','t_conc'),('Topicals','t_topicals'),
-                             ('Oil','t_oil'),('Seeds','t_seeds')]:
-                if _k in _ct: st.session_state[_sk] = int(_ct[_k])
-            st.success(f"✅ Loaded: {_p.get('name', 'Profile')}")
+    if st.button("Sign Out", use_container_width=True):
+        _sb.auth.sign_out()
+        for _k in ('sb_user','sb_access_token','sb_refresh_token'):
+            st.session_state.pop(_k, None)
+        st.rerun()
+
+    # Load profiles from Supabase
+    if 'sb_profiles' not in st.session_state:
+        st.session_state.sb_profiles = _load_profiles()
+
+    _profiles = st.session_state.sb_profiles
+    _prof_names = list(_profiles.keys())
+
+    def _apply_profile(p):
+        if p.get('province') in _PROVINCE_LIST:
+            st.session_state['s_province'] = p['province']
+        if p.get('custom_tax_rate') is not None:
+            st.session_state['s_custom_tax'] = float(p['custom_tax_rate'])
+        st.session_state['s_budget']         = int(p.get('budget', 30000))
+        st.session_state['s_shipping']       = int(p.get('shipping_cost', 0))
+        st.session_state['s_ship_in_budget'] = bool(p.get('ship_in_budget', False))
+        st.session_state['prof_name']        = p.get('name', 'My Store')
+        _ft = p.get('flower_targets', {})
+        for _k, _sk in [('1g','f1g'),('3.5g','f35g'),('5g','f5g'),('7g','f7g'),
+                         ('14g','f14g'),('28g','f28g'),('30g','f30g'),('other','fother')]:
+            if _k in _ft: st.session_state[_sk] = int(_ft[_k])
+        _ct = p.get('category_targets', {})
+        for _k, _sk in [('Pre-Roll','t_preroll'),('Edibles','t_edibles'),('Vapes','t_vapes'),
+                         ('Beverages','t_beverages'),('Capsules','t_capsules'),
+                         ('Concentrates','t_conc'),('Topicals','t_topicals'),
+                         ('Oil','t_oil'),('Seeds','t_seeds')]:
+            if _k in _ct: st.session_state[_sk] = int(_ct[_k])
+
+    if _prof_names:
+        _sel = st.selectbox("Load a saved location", ["— select —"] + _prof_names, key="prof_select")
+        _lc1, _lc2 = st.columns(2)
+        if _lc1.button("Load", use_container_width=True) and _sel != "— select —":
+            _apply_profile(_profiles[_sel])
+            st.session_state['prof_name'] = _sel
             st.rerun()
-        except Exception as _e:
-            st.error(f"Could not load profile: {_e}")
+        if _lc2.button("Delete", use_container_width=True) and _sel != "— select —":
+            _delete_profile(_sel)
+            st.session_state.sb_profiles.pop(_sel, None)
+            st.rerun()
 
     _prof_name = st.text_input("Store / Location Name", value="My Store", key="prof_name")
 
@@ -304,31 +424,28 @@ with st.sidebar:
 
     # ── save profile ──────────────────────────────────────────
     st.markdown("---")
-    _prof_data = json.dumps({
-        'name': _prof_name,
-        'province': province,
-        'custom_tax_rate': (tax_rate * 100) if PROVINCE_RATES.get(province) is None else None,
-        'budget': int(budget),
-        'shipping_cost': int(shipping_cost),
-        'ship_in_budget': bool(ship_in_budget),
-        'flower_targets': {
-            '1g': int(t_flower_1g), '3.5g': int(t_flower_35g), '5g': int(t_flower_5g),
-            '7g': int(t_flower_7g), '14g': int(t_flower_14g),  '28g': int(t_flower_28g),
-            '30g': int(t_flower_30g), 'other': int(t_flower_other),
-        },
-        'category_targets': {
-            'Pre-Roll': int(t_preroll), 'Edibles': int(t_edibles), 'Vapes': int(t_vapes),
-            'Beverages': int(t_beverages), 'Capsules': int(t_capsules), 'Concentrates': int(t_conc),
-            'Topicals': int(t_topicals), 'Oil': int(t_oil), 'Seeds': int(t_seeds),
-        },
-    }, indent=2)
-    st.download_button(
-        label="💾 Save Profile (.json)",
-        data=_prof_data,
-        file_name=f"{_prof_name.replace(' ', '_')}_profile.json",
-        mime="application/json",
-        use_container_width=True,
-    )
+    if st.button("💾 Save Profile", use_container_width=True):
+        _settings = {
+            'name': _prof_name,
+            'province': province,
+            'custom_tax_rate': (tax_rate * 100) if PROVINCE_RATES.get(province) is None else None,
+            'budget': int(budget),
+            'shipping_cost': int(shipping_cost),
+            'ship_in_budget': bool(ship_in_budget),
+            'flower_targets': {
+                '1g': int(t_flower_1g), '3.5g': int(t_flower_35g), '5g': int(t_flower_5g),
+                '7g': int(t_flower_7g), '14g': int(t_flower_14g),  '28g': int(t_flower_28g),
+                '30g': int(t_flower_30g), 'other': int(t_flower_other),
+            },
+            'category_targets': {
+                'Pre-Roll': int(t_preroll), 'Edibles': int(t_edibles), 'Vapes': int(t_vapes),
+                'Beverages': int(t_beverages), 'Capsules': int(t_capsules), 'Concentrates': int(t_conc),
+                'Topicals': int(t_topicals), 'Oil': int(t_oil), 'Seeds': int(t_seeds),
+            },
+        }
+        _save_profile(_prof_name, _settings)
+        st.session_state.sb_profiles[_prof_name] = _settings
+        st.success(f"✅ Saved: {_prof_name}")
 
 # ── main ──────────────────────────────────────────────────────
 try:
