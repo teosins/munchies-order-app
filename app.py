@@ -843,23 +843,15 @@ with tab3:
         try:    cat_sizes[cat] = sorted(raw, key=sort_size_key)
         except: cat_sizes[cat] = sorted(raw)
 
-    # Sub-categories that don't belong under their OCS-assigned classification
-    SUBCAT_EXCLUDE = {
-        'Flower': {'Hash and Kief', 'Hash And Kief'},
-    }
-
     # Sub-categories per category (auto-detected from OCS Sub-Category column)
     has_subcat  = 'Sub-Category' in merged_raw.columns
     subcat_map  = {}          # cat -> [subcats]
     subcat_sizes = {}         # (cat, subcat) -> [sizes]
     if has_subcat:
         for _cat in ALL_CATS:
-            _excluded = SUBCAT_EXCLUDE.get(_cat, set())
-            _sc_vals = [sc for sc in
-                merged_raw[
-                    (merged_raw['Classification']==_cat) & (merged_raw['Sub-Category']!='')
-                ]['Sub-Category'].dropna().unique().tolist()
-                if sc not in _excluded]
+            _sc_vals = merged_raw[
+                (merged_raw['Classification']==_cat) & (merged_raw['Sub-Category']!='')
+            ]['Sub-Category'].dropna().unique().tolist()
             if _sc_vals:
                 subcat_map[_cat] = sorted(_sc_vals)
                 for _sc in _sc_vals:
