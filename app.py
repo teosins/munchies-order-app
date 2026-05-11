@@ -491,9 +491,39 @@ _ADV_CATS = ['Flower','Vapes','Pre-Roll','Edibles','Topicals','Concentrates']
 
 _CAT_SIZE_DEFS = {
     'Flower':       [('1g',7),('3.5g',14),('5g',14),('7g',14),('14g',21),('28g',30),('30g',30),('other',14)],
-    'Vapes':        [('0.5g',21),('1g',21)],
-    'Pre-Roll':     [('0.5g',14),('1g',14),('1.5g',14),('2g',14),('3g',14),('3.5g',14)],
-    'Edibles':      [('10mg',14),('25mg',14),('50mg',14),('100mg',14),('200mg',14),('250mg',14)],
+    'Vapes':        [
+        ('0.2g',14),('0.3g',14),('0.4g',14),('0.45g',14),('0.5g',21),
+        ('0.95g',21),('1g',21),('1.1g',21),('1.2g',21),('1.25g',21),
+        ('1.8g',21),('2g',21),('2x0.5g',21),('3g',21),('4g',21),
+    ],
+    'Pre-Roll':     [
+        # Singles
+        ('1x0.3g',14),('1x0.35g',14),('1x0.4g',14),('1x0.5g',14),
+        ('1x0.6g',14),('1x0.7g',14),('1x0.75g',14),('1x1g',14),
+        ('1x1.5g',14),('1x2g',14),('1x7g',21),('1x14g',30),('1g',14),
+        # 2-packs
+        ('2x0.35g',21),('2x0.5g',21),('2x1g',21),
+        # 3-packs
+        ('3x0.5g',21),('3x1g',21),
+        # 4-packs
+        ('4x0.4g',21),('4x0.5g',21),('4x0.75g',21),('4x1g',21),
+        # 5-packs
+        ('5x0.3g',21),('5x0.35g',21),('5x0.4g',21),('5x0.5g',21),('5x0.6g',21),('5x1g',21),
+        # 6-7-packs
+        ('6x0.5g',21),('7x0.5g',21),
+        # 10-packs
+        ('10x0.3g',30),('10x0.35g',30),('10x0.4g',30),('10x0.5g',30),('10x0.75g',30),('10x1g',30),
+        # 12-packs
+        ('12x0.5g',30),('12x0.6g',30),
+        # Large packs
+        ('14x0.5g',30),('20x0.35g',30),('20x0.4g',30),('20x0.5g',30),('20x1g',30),
+        ('40x0.5g',30),('60x0.5g',30),('70x0.4g',30),('80x0.35g',30),
+    ],
+    'Edibles':      [
+        ('2.5mg',14),('5mg',14),('10mg',14),('20mg',14),('25mg',14),
+        ('40mg',14),('50mg',14),('80mg',14),('100mg',14),
+        ('150mg',14),('200mg',14),('250mg',14),('500mg',14),
+    ],
     'Topicals':     [('25ml',30),('50ml',30),('100ml',30),('250ml',30)],
     'Concentrates': [('0.5g',14),('1g',14),('2g',14),('3.5g',14)],
 }
@@ -737,16 +767,26 @@ with st.sidebar:
     # ── shared data-derived sizes (used by both DoS Advanced and LRC Advanced) ──
     _ALL_LRC_CATS = ['Flower','Vapes','Pre-Roll','Edibles','Concentrates',
                      'Topicals','Oil','Capsules','Beverages','Seeds']
+    def _sort_size(s):
+        import re as _re
+        m = _re.match(r'(\d+\.?\d*)', str(s))
+        return (float(m.group(1)) if m else 999, str(s))
     if kova_file and ocs_file:
-        _sz_raw = load_raw(kova_file.getvalue(), ocs_file.getvalue())[0]
+        _sz_merged, _sz_ocs = load_raw(kova_file.getvalue(), ocs_file.getvalue())
         _shared_cat_sizes = {}
-        for _sc in _ALL_LRC_CATS + _ADV_CATS:
+        for _sc in set(_ALL_LRC_CATS + _ADV_CATS):
             _sz_col = 'Flower Size' if _sc == 'Flower' else 'Product Size'
-            _szs = [s for s in _sz_raw[_sz_raw['Classification']==_sc][_sz_col].dropna().unique() if s]
-            def _sk(s):
-                import re as _re; m = _re.match(r'(\d+\.?\d*)', str(s))
-                return (float(m.group(1)) if m else 999, str(s))
-            _shared_cat_sizes[_sc] = sorted(_szs, key=_sk) or [sz for sz,_ in _CAT_SIZE_DEFS.get(_sc,[])]
+            # Kova history sizes
+            _kova_szs = {s for s in _sz_merged[_sz_merged['Classification']==_sc][_sz_col].dropna().unique() if s}
+            # Full OCS catalogue sizes (if Classification available in ocs_df)
+            _ocs_szs = set()
+            if 'Classification' in _sz_ocs.columns and 'Product Size' in _sz_ocs.columns:
+                _ocs_szs = {s for s in _sz_ocs[_sz_ocs['Classification']==_sc]['Product Size'].dropna().unique() if s}
+            _all_szs = _kova_szs | _ocs_szs
+            # Fall back to hardcoded if data has nothing
+            if not _all_szs:
+                _all_szs = {sz for sz,_ in _CAT_SIZE_DEFS.get(_sc,[])}
+            _shared_cat_sizes[_sc] = sorted(_all_szs, key=_sort_size)
     else:
         _shared_cat_sizes = {_sc: [sz for sz,_ in _CAT_SIZE_DEFS.get(_sc,[])]
                              for _sc in set(_ALL_LRC_CATS + _ADV_CATS)}
