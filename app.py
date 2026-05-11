@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import math
 import io
+import json
 from datetime import date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -168,6 +169,22 @@ def vcell(ws, r, c, val, font=None, fill=None, fmt=None, align='left', bold=Fals
     cell.border = BORDER
     return cell
 
+# ── province rates (module-level so profile loader can reference it) ──
+PROVINCE_RATES = {
+    "Ontario (HST 13%)":              0.13,
+    "Nova Scotia (HST 15%)":          0.15,
+    "New Brunswick (HST 15%)":        0.15,
+    "Newfoundland (HST 15%)":         0.15,
+    "PEI (HST 15%)":                  0.15,
+    "British Columbia (GST+PST 12%)": 0.12,
+    "Manitoba (GST+PST 12%)":         0.12,
+    "Saskatchewan (GST+PST 11%)":     0.11,
+    "Quebec (GST+QST 14.975%)":       0.14975,
+    "Alberta (GST 5%)":               0.05,
+    "Custom":                         None,
+}
+_PROVINCE_LIST = list(PROVINCE_RATES.keys())
+
 # ── sidebar ───────────────────────────────────────────────────
 with st.sidebar:
     try:
@@ -175,6 +192,40 @@ with st.sidebar:
     except Exception:
         st.markdown("## 💎 OPAL Order Tool")
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # ── location profiles ─────────────────────────────────────
+    st.markdown("---")
+    st.markdown("**📍 Location Profile**")
+
+    _prof_upload = st.file_uploader("Load saved profile (.json)", type="json", key="prof_upload")
+    if _prof_upload is not None:
+        try:
+            _p = json.loads(_prof_upload.read())
+            if _p.get('province') in _PROVINCE_LIST:
+                st.session_state['s_province'] = _p['province']
+            if _p.get('custom_tax_rate') is not None:
+                st.session_state['s_custom_tax'] = float(_p['custom_tax_rate'])
+            st.session_state['s_budget']         = int(_p.get('budget', 30000))
+            st.session_state['s_shipping']       = int(_p.get('shipping_cost', 0))
+            st.session_state['s_ship_in_budget'] = bool(_p.get('ship_in_budget', False))
+            st.session_state['prof_name']        = _p.get('name', 'My Store')
+            _ft = _p.get('flower_targets', {})
+            for _k, _sk in [('1g','f1g'),('3.5g','f35g'),('5g','f5g'),('7g','f7g'),
+                             ('14g','f14g'),('28g','f28g'),('30g','f30g'),('other','fother')]:
+                if _k in _ft: st.session_state[_sk] = int(_ft[_k])
+            _ct = _p.get('category_targets', {})
+            for _k, _sk in [('Pre-Roll','t_preroll'),('Edibles','t_edibles'),('Vapes','t_vapes'),
+                             ('Beverages','t_beverages'),('Capsules','t_capsules'),
+                             ('Concentrates','t_conc'),('Topicals','t_topicals'),
+                             ('Oil','t_oil'),('Seeds','t_seeds')]:
+                if _k in _ct: st.session_state[_sk] = int(_ct[_k])
+            st.success(f"✅ Loaded: {_p.get('name', 'Profile')}")
+            st.rerun()
+        except Exception as _e:
+            st.error(f"Could not load profile: {_e}")
+
+    _prof_name = st.text_input("Store / Location Name", value="My Store", key="prof_name")
+
     st.markdown("---")
     st.markdown("**📁 Upload Files**")
     kova_file = st.file_uploader("Cova Reorder Report (.xlsx)", type="xlsx", key="kova")
@@ -184,31 +235,25 @@ with st.sidebar:
     st.header("⚙️ Settings")
 
     # ── tax settings ──────────────────────────────────────────
-    PROVINCE_RATES = {
-        "Ontario (HST 13%)":              0.13,
-        "Nova Scotia (HST 15%)":          0.15,
-        "New Brunswick (HST 15%)":        0.15,
-        "Newfoundland (HST 15%)":         0.15,
-        "PEI (HST 15%)":                  0.15,
-        "British Columbia (GST+PST 12%)": 0.12,
-        "Manitoba (GST+PST 12%)":         0.12,
-        "Saskatchewan (GST+PST 11%)":     0.11,
-        "Quebec (GST+QST 14.975%)":       0.14975,
-        "Alberta (GST 5%)":               0.05,
-        "Custom":                         None,
-    }
-    province = st.selectbox("Province / Tax Region", list(PROVINCE_RATES.keys()), index=0)
+    province = st.selectbox("Province / Tax Region", _PROVINCE_LIST,
+                            index=_PROVINCE_LIST.index(st.session_state.get('s_province', _PROVINCE_LIST[0])),
+                            key="s_province")
     if PROVINCE_RATES[province] is None:
-        tax_rate = st.number_input("Custom Tax Rate (%)", value=13.0, min_value=0.0, max_value=30.0, step=0.1) / 100
+        tax_rate = st.number_input("Custom Tax Rate (%)", value=st.session_state.get('s_custom_tax', 13.0),
+                                   min_value=0.0, max_value=30.0, step=0.1, key="s_custom_tax") / 100
     else:
         tax_rate = PROVINCE_RATES[province]
         st.caption(f"Tax rate: {tax_rate*100:.3g}%")
 
-    budget = st.number_input("Weekly Budget (tax-in)", value=30000, step=500, format="%d")
+    budget = st.number_input("Weekly Budget (tax-in)", value=st.session_state.get('s_budget', 30000),
+                             step=500, format="%d", key="s_budget")
 
     st.markdown("**Shipping**")
-    shipping_cost = st.number_input("Shipping Cost ($)", value=0, min_value=0, step=5, format="%d")
-    ship_in_budget = st.checkbox("Deduct shipping from order budget", value=False,
+    shipping_cost  = st.number_input("Shipping Cost ($)", value=st.session_state.get('s_shipping', 0),
+                                     min_value=0, step=5, format="%d", key="s_shipping")
+    ship_in_budget = st.checkbox("Deduct shipping from order budget",
+                                  value=st.session_state.get('s_ship_in_budget', False),
+                                  key="s_ship_in_budget",
                                   help="When checked, shipping is subtracted before calculating how much product you can order.")
 
     effective_budget = budget - shipping_cost if ship_in_budget else budget
@@ -240,22 +285,50 @@ with st.sidebar:
 
     col1, col2 = st.columns(2)
     with col1:
-        t_preroll   = st.number_input("Pre-Roll",     value=14, min_value=1, max_value=90)
-        t_edibles   = st.number_input("Edibles",      value=14, min_value=1, max_value=90)
-        t_vapes     = st.number_input("Vapes",        value=21, min_value=1, max_value=90)
-        t_beverages = st.number_input("Beverages",    value=14, min_value=1, max_value=90)
-        t_capsules  = st.number_input("Capsules",     value=21, min_value=1, max_value=90)
+        t_preroll   = st.number_input("Pre-Roll",     value=14, min_value=1, max_value=90, key="t_preroll")
+        t_edibles   = st.number_input("Edibles",      value=14, min_value=1, max_value=90, key="t_edibles")
+        t_vapes     = st.number_input("Vapes",        value=21, min_value=1, max_value=90, key="t_vapes")
+        t_beverages = st.number_input("Beverages",    value=14, min_value=1, max_value=90, key="t_beverages")
+        t_capsules  = st.number_input("Capsules",     value=21, min_value=1, max_value=90, key="t_capsules")
     with col2:
-        t_conc      = st.number_input("Concentrates", value=14, min_value=1, max_value=90)
-        t_topicals  = st.number_input("Topicals",     value=30, min_value=1, max_value=90)
-        t_oil       = st.number_input("Oil",          value=21, min_value=1, max_value=90)
-        t_seeds     = st.number_input("Seeds",        value=60, min_value=1, max_value=90)
+        t_conc      = st.number_input("Concentrates", value=14, min_value=1, max_value=90, key="t_conc")
+        t_topicals  = st.number_input("Topicals",     value=30, min_value=1, max_value=90, key="t_topicals")
+        t_oil       = st.number_input("Oil",          value=21, min_value=1, max_value=90, key="t_oil")
+        t_seeds     = st.number_input("Seeds",        value=60, min_value=1, max_value=90, key="t_seeds")
 
     TARGET = {
         'Pre-Roll': t_preroll, 'Edibles': t_edibles, 'Vapes': t_vapes,
         'Beverages': t_beverages, 'Capsules': t_capsules, 'Concentrates': t_conc,
         'Topicals': t_topicals, 'Oil': t_oil, 'Seeds': t_seeds,
     }
+
+    # ── save profile ──────────────────────────────────────────
+    st.markdown("---")
+    _prof_data = json.dumps({
+        'name': _prof_name,
+        'province': province,
+        'custom_tax_rate': (tax_rate * 100) if PROVINCE_RATES.get(province) is None else None,
+        'budget': int(budget),
+        'shipping_cost': int(shipping_cost),
+        'ship_in_budget': bool(ship_in_budget),
+        'flower_targets': {
+            '1g': int(t_flower_1g), '3.5g': int(t_flower_35g), '5g': int(t_flower_5g),
+            '7g': int(t_flower_7g), '14g': int(t_flower_14g),  '28g': int(t_flower_28g),
+            '30g': int(t_flower_30g), 'other': int(t_flower_other),
+        },
+        'category_targets': {
+            'Pre-Roll': int(t_preroll), 'Edibles': int(t_edibles), 'Vapes': int(t_vapes),
+            'Beverages': int(t_beverages), 'Capsules': int(t_capsules), 'Concentrates': int(t_conc),
+            'Topicals': int(t_topicals), 'Oil': int(t_oil), 'Seeds': int(t_seeds),
+        },
+    }, indent=2)
+    st.download_button(
+        label="💾 Save Profile (.json)",
+        data=_prof_data,
+        file_name=f"{_prof_name.replace(' ', '_')}_profile.json",
+        mime="application/json",
+        use_container_width=True,
+    )
 
 # ── main ──────────────────────────────────────────────────────
 try:
