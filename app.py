@@ -1104,6 +1104,39 @@ def load_raw(kova_bytes, ocs_bytes):
     # Normalise Classification: OCS may call it 'Category'
     if 'Classification' not in ocs.columns and 'Category' in ocs.columns:
         ocs['Classification'] = ocs['Category']
+
+    # If still no Classification, derive from Sub-Category (always present in OCS exports)
+    if 'Classification' not in ocs.columns and 'Sub-Category' in ocs.columns:
+        _SC_TO_CLASS = {
+            # Flower
+            'Whole Flower':'Flower','Milled Flower':'Flower',
+            'Hash and Kief':'Flower','Variety Packs':'Flower',
+            # Pre-Roll
+            'Singles':'Pre-Roll','Multipacks':'Pre-Roll',
+            # Vapes
+            '510 Thread Cartridges':'Vapes','Closed Loop Pods':'Vapes',
+            'Disposable Pens':'Vapes',
+            # Edibles
+            'Soft Chews':'Edibles','Hard Chews':'Edibles','Chocolates':'Edibles',
+            'Baked Goods':'Edibles','Confections':'Edibles','Gummies':'Edibles',
+            'Candy':'Edibles','Lozenges':'Edibles','Mints':'Edibles',
+            # Beverages
+            'Beverages':'Beverages','Drinks':'Beverages','Teas':'Beverages',
+            # Concentrates
+            'Shatter':'Concentrates','Resin':'Concentrates','Rosin':'Concentrates',
+            'Wax':'Concentrates','Distillate':'Concentrates','Diamonds':'Concentrates',
+            'Hash':'Concentrates','Kief':'Concentrates','Budder':'Concentrates',
+            # Topicals
+            'Creams And Lotions':'Topicals','Body Care':'Topicals',
+            'Face Care':'Topicals','Patches':'Topicals',
+            'Lip Care':'Topicals','Bath':'Topicals',
+            # Oil / Capsules / Seeds
+            'Oil':'Oil','Sublingual Oil':'Oil','Oils':'Oil',
+            'Capsules':'Capsules','Soft-Gel Capsules':'Capsules','Gel Capsules':'Capsules',
+            'Seeds':'Seeds','Seed Packs':'Seeds',
+        }
+        ocs['Classification'] = ocs['Sub-Category'].map(_SC_TO_CLASS)
+
     # Normalise product name
     if 'Product' not in ocs.columns:
         for _pn in ['Product Name', 'Variant Name']:
