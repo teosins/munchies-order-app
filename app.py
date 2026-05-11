@@ -249,6 +249,21 @@ if order_df.empty:
     st.warning("No items need ordering based on current stock levels and settings.")
     st.stop()
 
+# ── shared style helpers ──────────────────────────────────────
+def color_tier(val):
+    colors = {'A':'background-color:#C6EFCE','B':'background-color:#E2EFDA',
+              'C':'background-color:#FFEB9C','D':'background-color:#FFC7CE'}
+    return colors.get(val, '')
+
+def color_days(val):
+    try:
+        v = float(val)
+        if v <= 3:  return 'background-color:#FFC7CE;color:#9C0006;font-weight:bold'
+        if v <= 7:  return 'background-color:#FFEB9C;color:#9C6500;font-weight:bold'
+        if v >= 14: return 'background-color:#C6EFCE;color:#276221'
+    except: pass
+    return ''
+
 # ── workbook builders (defined before tabs) ───────────────────
 def build_workbook(order_df, deferred_df, all_active, budget_pretax, target, today, tax_rate=0.13):
     wb = Workbook()
@@ -493,20 +508,6 @@ with tab1:
     show['Est Cost']   = show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
     show['Days Left']  = show['Days Left'].round(1)
 
-    def color_tier(val):
-        colors = {'A':'background-color:#C6EFCE','B':'background-color:#E2EFDA',
-                  'C':'background-color:#FFEB9C','D':'background-color:#FFC7CE'}
-        return colors.get(val, '')
-
-    def color_days(val):
-        try:
-            v = float(val)
-            if v <= 3:  return 'background-color:#FFC7CE;color:#9C0006;font-weight:bold'
-            if v <= 7:  return 'background-color:#FFEB9C;color:#9C6500;font-weight:bold'
-            if v >= 14: return 'background-color:#C6EFCE;color:#276221'
-        except: pass
-        return ''
-
     styled = show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left'])
     st.dataframe(styled, hide_index=True, use_container_width=True, height=500)
 
@@ -680,6 +681,55 @@ with tab2:
         simple_rows.append({'Category': cat, 'On Shelf': int(cur), 'Target': tgt, 'Gap': gap, 'Status': '🔴 Need' if gap > 0 else '🟢 OK'})
     simple_df = pd.DataFrame(simple_rows)
     st.dataframe(simple_df, hide_index=True, use_container_width=True)
+
+    # ── suggested replenishment order (no budget cap) ────────────
+    st.markdown("---")
+    st.markdown("#### 📋 Suggested Replenishment Order")
+    st.caption("All items that need restocking based on velocity — no budget cap. Review the total before submitting.")
+
+    uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999)
+
+    if uncapped_df.empty:
+        st.success("✅ Nothing needs restocking right now.")
+    else:
+        uc_pretax = uncapped_df['Est Cost'].sum()
+        uc_tax    = uc_pretax * tax_rate
+        uc_total  = uc_pretax + uc_tax
+
+        uc1, uc2, uc3, uc4 = st.columns(4)
+        uc1.metric("SKUs to Order", len(uncapped_df))
+        uc2.metric("Pre-Tax Total", f"${uc_pretax:,.2f}")
+        uc3.metric(f"Tax ({tax_rate*100:.3g}%)", f"${uc_tax:,.2f}")
+        uc4.metric("Total (Tax-In)", f"${uc_total:,.2f}")
+
+        uc_cols = {
+            'Classification':'Category','Product':'Product','Tier':'Tier',
+            'Days Left':'Days Left','In Stock Qty':'In Stock','On Order':'On Order',
+            'Weekly Vel':'Wkly Vel','Cases':'Cases','Suggest':'Units',
+            'Unit Price':'Unit Price','Est Cost':'Est Cost','Supplier Sku':'OCS Variant #'
+        }
+        uc_show = uncapped_df[[c for c in uc_cols if c in uncapped_df.columns]].rename(columns=uc_cols).copy()
+        uc_show['Unit Price'] = uc_show['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
+        uc_show['Est Cost']   = uc_show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
+        uc_show['Days Left']  = uc_show['Days Left'].round(1)
+        st.dataframe(
+            uc_show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left']),
+            hide_index=True, use_container_width=True, height=400
+        )
+
+        uc_upload = uncapped_df[['Supplier Sku','Cases']].copy()
+        uc_upload.columns = ['SKU','Quantity']
+        uc_buf = io.BytesIO()
+        with pd.ExcelWriter(uc_buf, engine='openpyxl') as writer:
+            uc_upload.to_excel(writer, sheet_name='MasterCatalogue', index=False)
+        uc_buf.seek(0)
+        st.download_button(
+            label="📤 Download OCS Upload File (.xlsx)",
+            data=uc_buf,
+            file_name=f'OCS_SmartOrder_{today2.strftime("%Y%m%d")}.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            use_container_width=True,
+        )
 
     # ── suggestions ───────────────────────────────────────────
     sc_gap_total = sum(sc_pivot_gaps[cat].values.sum() for cat in STRAIN_CATS)
