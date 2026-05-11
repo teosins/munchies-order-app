@@ -357,29 +357,60 @@ if not _is_active:
                     st.error(f"Could not connect to payment system: {_ce}")
                     st.stop()
 
-        _pc1, _pc2 = st.columns(2)
-        with _pc1:
-            st.markdown("""<div class='price-card'>
-                <div class='price-badge'>MONTHLY</div>
-                <div class='price-amount'>$100</div>
-                <div class='price-period'>per month</div>
-            </div>""", unsafe_allow_html=True)
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-            st.link_button("Start Free Trial — Monthly",
-                           url=st.session_state['checkout_url_monthly'],
-                           use_container_width=True)
+        _url_m = st.session_state['checkout_url_monthly']
+        _url_y = st.session_state['checkout_url_yearly']
 
-        with _pc2:
-            st.markdown("""<div class='price-card' style='border-color:rgba(137,212,245,0.4)'>
-                <div class='price-badge'>YEARLY — BEST VALUE</div>
-                <div class='price-amount'>$700</div>
-                <div class='price-period'>per year &nbsp;·&nbsp; $58/mo</div>
-                <div class='price-save'>Save $500 vs monthly</div>
-            </div>""", unsafe_allow_html=True)
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-            st.link_button("Start Free Trial — Yearly",
-                           url=st.session_state['checkout_url_yearly'],
-                           use_container_width=True)
+        import streamlit.components.v1 as _components
+        _components.html(f"""
+        <style>
+        .opal-btn {{
+            display:block; width:100%; padding:13px 0;
+            background:linear-gradient(135deg,rgba(137,212,245,0.18),rgba(201,166,255,0.18));
+            border:1px solid rgba(137,212,245,0.45); border-radius:8px;
+            color:#89d4f5; font-family:sans-serif; font-size:0.92rem;
+            font-weight:600; letter-spacing:0.04em; text-align:center;
+            text-decoration:none; cursor:pointer; margin-bottom:6px;
+            transition:all 0.2s;
+        }}
+        .opal-btn:hover {{
+            background:linear-gradient(135deg,rgba(137,212,245,0.32),rgba(201,166,255,0.32));
+            border-color:#89d4f5; box-shadow:0 0 16px rgba(137,212,245,0.25);
+        }}
+        .cards {{ display:flex; gap:16px; }}
+        .card {{
+            flex:1; background:#12121e; border:1px solid rgba(137,212,245,0.2);
+            border-radius:16px; padding:28px 20px; text-align:center;
+            font-family:sans-serif;
+        }}
+        .card.featured {{ border-color:rgba(137,212,245,0.45); }}
+        .badge {{
+            background:linear-gradient(135deg,rgba(137,212,245,0.15),rgba(201,166,255,0.15));
+            border:1px solid rgba(137,212,245,0.3); border-radius:20px;
+            padding:4px 14px; font-size:0.72rem; letter-spacing:0.08em;
+            color:#89d4f5; display:inline-block; margin-bottom:14px;
+        }}
+        .amount {{ font-size:2.6rem; font-weight:800; color:#e8e8f0; }}
+        .period {{ color:#666; font-size:0.82rem; margin-top:-2px; }}
+        .save   {{ color:#89d4f5; font-size:0.78rem; margin-top:6px; font-weight:600; }}
+        </style>
+        <div class="cards">
+          <div class="card">
+            <div class="badge">MONTHLY</div>
+            <div class="amount">$100</div>
+            <div class="period">per month</div>
+            <br>
+            <a class="opal-btn" href="{_url_m}" target="_blank">Start Free Trial — Monthly</a>
+          </div>
+          <div class="card featured">
+            <div class="badge">YEARLY — BEST VALUE</div>
+            <div class="amount">$700</div>
+            <div class="period">per year &nbsp;·&nbsp; $58/mo</div>
+            <div class="save">Save $500 vs monthly</div>
+            <br>
+            <a class="opal-btn" href="{_url_y}" target="_blank">Start Free Trial — Yearly</a>
+          </div>
+        </div>
+        """, height=260)
 
         st.markdown("<p style='text-align:center;color:#555;font-size:0.78rem;margin-top:16px'>Cancel anytime · Secure payments via Stripe · Have a referral code? Enter it at checkout.</p>", unsafe_allow_html=True)
 
