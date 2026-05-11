@@ -281,16 +281,29 @@ elif _qp.get('checkout') == 'cancelled':
     st.warning("Checkout cancelled — you can subscribe anytime from this page.")
 
 # ── subscription gate ─────────────────────────────────────────
-def _sync_from_stripe(user_id):
+def _sync_from_stripe(user_id, debug=False):
     """Check Stripe directly and sync to Supabase if active subscription found."""
     try:
         res = _sb.table('user_subscriptions').select('stripe_customer_id').eq('user_id', user_id).execute()
         if not res.data or not res.data[0].get('stripe_customer_id'):
+            if debug:
+                st.info("No Stripe customer linked yet — complete checkout above first.")
             return False
         cid  = res.data[0]['stripe_customer_id']
-        subs = _stripe.Subscription.list(customer=cid, limit=1)
+        subs = _stripe.Subscription.list(customer=cid, limit=10)
+        if not subs.data:
+            # Try searching by email in case customer was created twice
+            user_email = st.session_state.sb_user.email
+            customers  = _stripe.Customer.search(query=f'email:"{user_email}"', limit=10)
+            for c in customers.data:
+                subs2 = _stripe.Subscription.list(customer=c.id, limit=5)
+                if subs2.data:
+                    cid  = c.id
+                    subs = subs2
+                    break
         if subs.data:
-            sub  = subs.data[0]
+            # Pick active/trialing first, else most recent
+            sub = next((s for s in subs.data if s['status'] in ('active','trialing')), subs.data[0])
             plan = 'yearly' if sub['items']['data'][0]['price']['id'] == _PRICE_YEARLY else 'monthly'
             _sb.table('user_subscriptions').upsert({
                 'user_id': user_id,
@@ -302,8 +315,12 @@ def _sync_from_stripe(user_id):
                 'current_period_end': _dt.utcfromtimestamp(sub['current_period_end']).isoformat(),
             }).execute()
             return sub['status'] in ('active', 'trialing')
-    except Exception:
-        pass
+        else:
+            if debug:
+                st.info("No subscription found in Stripe yet — wait a moment after completing checkout, then try again.")
+    except Exception as _e:
+        if debug:
+            st.error(f"Stripe check error: {_e}")
     return False
 
 _sub       = _check_sub(st.session_state.sb_user.id)
@@ -418,10 +435,8 @@ if not _is_active:
         if st.button("✅ I've completed payment — click to activate", use_container_width=True):
             for _k in ('checkout_url_monthly','checkout_url_yearly'):
                 st.session_state.pop(_k, None)
-            if _sync_from_stripe(st.session_state.sb_user.id):
+            if _sync_from_stripe(st.session_state.sb_user.id, debug=True):
                 st.rerun()
-            else:
-                st.warning("Payment not found yet — wait a moment and try again.")
 
         st.markdown("---")
         if st.button("Sign Out", use_container_width=True):
