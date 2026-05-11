@@ -494,22 +494,40 @@ with tab1:
 
     st.markdown("---")
 
-    # ── order table ───────────────────────────────────────────
+    # ── tier filter ───────────────────────────────────────────
     st.markdown("### Order Detail")
-    display_cols = {
-        'Classification':'Category','Product':'Product','Tier':'Tier',
-        'Days Left':'Days Left','In Stock Qty':'In Stock','On Order':'On Order',
-        'Sales (7 Days)':'7d Sales','Sales (30 Days)':'30d Sales',
-        'Weekly Vel':'Wkly Vel','Cases':'Cases','Suggest':'Units',
-        'Unit Price':'Unit Price','Est Cost':'Est Cost','Supplier Sku':'OCS Variant #'
-    }
-    show = order_df[[c for c in display_cols.keys() if c in order_df.columns]].rename(columns=display_cols)
-    show['Unit Price'] = show['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
-    show['Est Cost']   = show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
-    show['Days Left']  = show['Days Left'].round(1)
+    tier_options = ['A — Fast (5+/wk)', 'B — Mid (2–4/wk)', 'C — Slow (~1/wk)', 'D — Very Slow (<1/wk)']
+    tier_map     = {'A — Fast (5+/wk)':'A','B — Mid (2–4/wk)':'B','C — Slow (~1/wk)':'C','D — Very Slow (<1/wk)':'D'}
+    selected_labels = st.multiselect(
+        "Filter by Tier (select one or more to combine)",
+        options=tier_options, default=tier_options, key="t1_tier_filter"
+    )
+    selected_tiers = [tier_map[l] for l in selected_labels] if selected_labels else list(tier_map.values())
+    filtered_df = order_df[order_df['Tier'].isin(selected_tiers)]
 
-    styled = show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left'])
-    st.dataframe(styled, hide_index=True, use_container_width=True, height=500)
+    if filtered_df.empty:
+        st.info("No items match the selected tiers.")
+    else:
+        f_pretax = filtered_df['Est Cost'].sum()
+        fa1, fa2, fa3, fa4 = st.columns(4)
+        fa1.metric("SKUs (filtered)", len(filtered_df))
+        fa2.metric("Pre-Tax",  f"${f_pretax:,.2f}")
+        fa3.metric(tax_label,  f"${f_pretax * tax_rate:,.2f}")
+        fa4.metric("Tax-In",   f"${f_pretax * (1 + tax_rate):,.2f}")
+
+        display_cols = {
+            'Classification':'Category','Product':'Product','Tier':'Tier',
+            'Days Left':'Days Left','In Stock Qty':'In Stock','On Order':'On Order',
+            'Sales (7 Days)':'7d Sales','Sales (30 Days)':'30d Sales',
+            'Weekly Vel':'Wkly Vel','Cases':'Cases','Suggest':'Units',
+            'Unit Price':'Unit Price','Est Cost':'Est Cost','Supplier Sku':'OCS Variant #'
+        }
+        show = filtered_df[[c for c in display_cols.keys() if c in filtered_df.columns]].rename(columns=display_cols)
+        show['Unit Price'] = show['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
+        show['Est Cost']   = show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
+        show['Days Left']  = show['Days Left'].round(1)
+        st.dataframe(show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left']),
+                     hide_index=True, use_container_width=True, height=500)
 
     if not deferred_df.empty:
         with st.expander(f"📋 Deferred to Next Order ({len(deferred_df)} SKUs — ${deferred_df['Est Cost'].sum():,.2f} pre-tax)"):
@@ -522,26 +540,27 @@ with tab1:
 
     # ── download files ────────────────────────────────────────
     st.markdown("### Download Files")
-    dl1, dl2 = st.columns(2)
-    today = date.today()
-    with dl1:
-        workbook_buf = build_workbook(order_df, deferred_df, all_active, budget_pretax, TARGET, today, tax_rate)
-        st.download_button(
-            label="📥 Download Order Workbook (.xlsx)",
-            data=workbook_buf,
-            file_name=f'OCS_Order_Tool_{today.strftime("%Y%m%d")}.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            use_container_width=True,
-        )
-    with dl2:
-        upload_buf = build_upload(order_df)
-        st.download_button(
-            label="📤 Download OCS Upload File (.xlsx)",
-            data=upload_buf,
-            file_name=f'OCS_Upload_{today.strftime("%Y%m%d")}.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            use_container_width=True,
-        )
+    if not filtered_df.empty:
+        dl1, dl2 = st.columns(2)
+        today = date.today()
+        with dl1:
+            workbook_buf = build_workbook(filtered_df, deferred_df, all_active, budget_pretax, TARGET, today, tax_rate)
+            st.download_button(
+                label="📥 Download Order Workbook (.xlsx)",
+                data=workbook_buf,
+                file_name=f'OCS_Order_Tool_{today.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+            )
+        with dl2:
+            upload_buf = build_upload(filtered_df)
+            st.download_button(
+                label="📤 Download OCS Upload File (.xlsx)",
+                data=upload_buf,
+                file_name=f'OCS_Upload_{today.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+            )
 
 # ══════════════════════════════════════════════════════════════
 # TAB 2: SUGGESTED ORDER (NO BUDGET CAP)
@@ -555,49 +574,62 @@ with tab2:
     if uncapped_df.empty:
         st.success("✅ Nothing needs restocking right now.")
     else:
-        uc_pretax = uncapped_df['Est Cost'].sum()
+        # ── tier filter ───────────────────────────────────────
+        uc_tier_options = ['A — Fast (5+/wk)', 'B — Mid (2–4/wk)', 'C — Slow (~1/wk)', 'D — Very Slow (<1/wk)']
+        uc_tier_map     = {'A — Fast (5+/wk)':'A','B — Mid (2–4/wk)':'B','C — Slow (~1/wk)':'C','D — Very Slow (<1/wk)':'D'}
+        uc_selected_labels = st.multiselect(
+            "Filter by Tier (select one or more to combine)",
+            options=uc_tier_options, default=uc_tier_options, key="t2_tier_filter"
+        )
+        uc_selected_tiers = [uc_tier_map[l] for l in uc_selected_labels] if uc_selected_labels else list(uc_tier_map.values())
+        uc_filtered = uncapped_df[uncapped_df['Tier'].isin(uc_selected_tiers)]
+
+        uc_pretax = uc_filtered['Est Cost'].sum()
         uc_tax    = uc_pretax * tax_rate
         uc_total  = uc_pretax + uc_tax
 
         uc1, uc2, uc3, uc4 = st.columns(4)
-        uc1.metric("SKUs to Order",   len(uncapped_df))
+        uc1.metric("SKUs to Order",   len(uc_filtered))
         uc2.metric("Pre-Tax Total",   f"${uc_pretax:,.2f}")
         uc3.metric(f"Tax ({tax_rate*100:.3g}%)", f"${uc_tax:,.2f}")
         uc4.metric("Total (Tax-In)",  f"${uc_total:,.2f}")
 
         st.markdown("---")
 
-        uc_display_cols = {
-            'Classification':'Category','Product':'Product','Tier':'Tier',
-            'Days Left':'Days Left','In Stock Qty':'In Stock','On Order':'On Order',
-            'Sales (7 Days)':'7d Sales','Sales (30 Days)':'30d Sales',
-            'Weekly Vel':'Wkly Vel','Cases':'Cases','Suggest':'Units',
-            'Unit Price':'Unit Price','Est Cost':'Est Cost','Supplier Sku':'OCS Variant #'
-        }
-        uc_show = uncapped_df[[c for c in uc_display_cols if c in uncapped_df.columns]].rename(columns=uc_display_cols).copy()
-        uc_show['Unit Price'] = uc_show['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
-        uc_show['Est Cost']   = uc_show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
-        uc_show['Days Left']  = uc_show['Days Left'].round(1)
-        st.dataframe(
-            uc_show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left']),
-            hide_index=True, use_container_width=True, height=500
-        )
+        if uc_filtered.empty:
+            st.info("No items match the selected tiers.")
+        else:
+            uc_display_cols = {
+                'Classification':'Category','Product':'Product','Tier':'Tier',
+                'Days Left':'Days Left','In Stock Qty':'In Stock','On Order':'On Order',
+                'Sales (7 Days)':'7d Sales','Sales (30 Days)':'30d Sales',
+                'Weekly Vel':'Wkly Vel','Cases':'Cases','Suggest':'Units',
+                'Unit Price':'Unit Price','Est Cost':'Est Cost','Supplier Sku':'OCS Variant #'
+            }
+            uc_show = uc_filtered[[c for c in uc_display_cols if c in uc_filtered.columns]].rename(columns=uc_display_cols).copy()
+            uc_show['Unit Price'] = uc_show['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
+            uc_show['Est Cost']   = uc_show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
+            uc_show['Days Left']  = uc_show['Days Left'].round(1)
+            st.dataframe(
+                uc_show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left']),
+                hide_index=True, use_container_width=True, height=500
+            )
 
-        st.markdown("---")
-        uc_today = date.today()
-        uc_upload = uncapped_df[['Supplier Sku','Cases']].copy()
-        uc_upload.columns = ['SKU','Quantity']
-        uc_buf = io.BytesIO()
-        with pd.ExcelWriter(uc_buf, engine='openpyxl') as writer:
-            uc_upload.to_excel(writer, sheet_name='MasterCatalogue', index=False)
-        uc_buf.seek(0)
-        st.download_button(
-            label="📤 Download OCS Upload File (.xlsx)",
-            data=uc_buf,
-            file_name=f'OCS_SuggestedOrder_{uc_today.strftime("%Y%m%d")}.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            use_container_width=True,
-        )
+            st.markdown("---")
+            uc_today = date.today()
+            uc_upload = uc_filtered[['Supplier Sku','Cases']].copy()
+            uc_upload.columns = ['SKU','Quantity']
+            uc_buf = io.BytesIO()
+            with pd.ExcelWriter(uc_buf, engine='openpyxl') as writer:
+                uc_upload.to_excel(writer, sheet_name='MasterCatalogue', index=False)
+            uc_buf.seek(0)
+            st.download_button(
+                label="📤 Download OCS Upload File (.xlsx)",
+                data=uc_buf,
+                file_name=f'OCS_SuggestedOrder_{uc_today.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+            )
 
 # ══════════════════════════════════════════════════════════════
 # TAB 3: MENU BUILDER
