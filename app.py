@@ -218,6 +218,144 @@ if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
                     st.error("Invalid email or password.")
     st.stop()
 
+# ── stripe ────────────────────────────────────────────────────
+import stripe as _stripe
+from datetime import datetime as _dt
+
+_stripe.api_key    = st.secrets.get("STRIPE_SECRET_KEY", "")
+_PRICE_MONTHLY     = "price_1TVmB3IywzMN4ZEtMUg1VK62"
+_PRICE_YEARLY      = "price_1TVmCMIywzMN4ZEtIhU4Ykz5"
+_TRIAL_DAYS        = 14
+_APP_URL           = st.secrets.get("APP_URL", "https://munchies-order-app.streamlit.app")
+
+def _get_or_create_customer(user):
+    res = _sb.table('user_subscriptions').select('stripe_customer_id,status').eq('user_id', user.id).execute()
+    if res.data and res.data[0].get('stripe_customer_id'):
+        return res.data[0]['stripe_customer_id'], res.data[0].get('status', 'none')
+    cust = _stripe.Customer.create(email=user.email, metadata={'uid': user.id})
+    _sb.table('user_subscriptions').upsert({'user_id': user.id, 'stripe_customer_id': cust.id, 'status': 'none'}).execute()
+    return cust.id, 'none'
+
+def _check_sub(user_id):
+    res = _sb.table('user_subscriptions').select('*').eq('user_id', user_id).execute()
+    return res.data[0] if res.data else None
+
+def _sync_sub(user_id, session_id):
+    try:
+        sess = _stripe.checkout.Session.retrieve(session_id, expand=['subscription'])
+        sub  = sess.subscription
+        if sub:
+            plan = 'yearly' if sub['items']['data'][0]['price']['id'] == _PRICE_YEARLY else 'monthly'
+            _sb.table('user_subscriptions').upsert({
+                'user_id': user_id,
+                'stripe_subscription_id': sub['id'],
+                'status': sub['status'],
+                'plan': plan,
+                'trial_end': _dt.utcfromtimestamp(sub['trial_end']).isoformat() if sub.get('trial_end') else None,
+                'current_period_end': _dt.utcfromtimestamp(sub['current_period_end']).isoformat(),
+            }).execute()
+    except Exception as _e:
+        st.error(f"Could not verify payment: {_e}")
+
+def _make_checkout(customer_id, price_id):
+    sess = _stripe.checkout.Session.create(
+        customer=customer_id,
+        payment_method_types=['card'],
+        line_items=[{'price': price_id, 'quantity': 1}],
+        mode='subscription',
+        subscription_data={'trial_period_days': _TRIAL_DAYS},
+        allow_promotion_codes=True,
+        success_url=f"{_APP_URL}?checkout=success&sid={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{_APP_URL}?checkout=cancelled",
+    )
+    return sess.url
+
+# ── handle checkout return ────────────────────────────────────
+_qp = st.query_params
+if _qp.get('checkout') == 'success' and 'sid' in _qp:
+    _sync_sub(st.session_state.sb_user.id, _qp['sid'])
+    st.query_params.clear()
+    st.rerun()
+elif _qp.get('checkout') == 'cancelled':
+    st.query_params.clear()
+    st.warning("Checkout cancelled — you can subscribe anytime from this page.")
+
+# ── subscription gate ─────────────────────────────────────────
+_sub      = _check_sub(st.session_state.sb_user.id)
+_is_active = _sub and _sub.get('status') in ('active', 'trialing')
+
+if not _is_active:
+    st.markdown("""
+    <style>
+    .price-card {
+        background: #12121e; border: 1px solid rgba(137,212,245,0.2);
+        border-radius: 16px; padding: 32px 24px; text-align: center;
+        transition: all 0.2s;
+    }
+    .price-card:hover { border-color: #89d4f5; box-shadow: 0 0 30px rgba(137,212,245,0.12); }
+    .price-badge {
+        background: linear-gradient(135deg,rgba(137,212,245,0.15),rgba(201,166,255,0.15));
+        border: 1px solid rgba(137,212,245,0.3); border-radius: 20px;
+        padding: 4px 14px; font-size: 0.75rem; letter-spacing: 0.08em;
+        color: #89d4f5; display: inline-block; margin-bottom: 16px;
+    }
+    .price-amount { font-size: 2.8rem; font-weight: 800; color: #e8e8f0; }
+    .price-period { color: #666; font-size: 0.85rem; margin-top: -4px; }
+    .price-save   { color: #89d4f5; font-size: 0.8rem; margin-top: 8px; font-weight: 600; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    _sc1, _sc2, _sc3 = st.columns([1, 2, 1])
+    with _sc2:
+        try:
+            st.image("opal_logo.png", use_container_width=True)
+        except Exception:
+            pass
+        st.markdown("<div style='text-align:center;margin-bottom:8px'><span style='background:linear-gradient(135deg,#89d4f5,#c9a6ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:1.4rem;font-weight:700;letter-spacing:0.1em'>OPAL ORDER TOOL</span></div>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center;color:#666;font-size:0.85rem;margin-bottom:24px'>The smart ordering tool for cannabis retailers</p>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:center;background:rgba(137,212,245,0.08);border:1px solid rgba(137,212,245,0.2);border-radius:10px;padding:12px;margin-bottom:24px;color:#89d4f5;font-weight:600'>✨ {_TRIAL_DAYS}-day free trial — no credit card charged until trial ends</div>", unsafe_allow_html=True)
+
+        _pc1, _pc2 = st.columns(2)
+        with _pc1:
+            st.markdown("""<div class='price-card'>
+                <div class='price-badge'>MONTHLY</div>
+                <div class='price-amount'>$100</div>
+                <div class='price-period'>per month</div>
+            </div>""", unsafe_allow_html=True)
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            if st.button("Start Free Trial — Monthly", use_container_width=True, key="sub_monthly"):
+                _cid, _ = _get_or_create_customer(st.session_state.sb_user)
+                _url = _make_checkout(_cid, _PRICE_MONTHLY)
+                st.markdown(f'<meta http-equiv="refresh" content="0;url={_url}">', unsafe_allow_html=True)
+
+        with _pc2:
+            st.markdown("""<div class='price-card' style='border-color:rgba(137,212,245,0.4)'>
+                <div class='price-badge'>YEARLY — BEST VALUE</div>
+                <div class='price-amount'>$700</div>
+                <div class='price-period'>per year &nbsp;·&nbsp; $58/mo</div>
+                <div class='price-save'>Save $500 vs monthly</div>
+            </div>""", unsafe_allow_html=True)
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            if st.button("Start Free Trial — Yearly", use_container_width=True, key="sub_yearly"):
+                _cid, _ = _get_or_create_customer(st.session_state.sb_user)
+                _url = _make_checkout(_cid, _PRICE_YEARLY)
+                st.markdown(f'<meta http-equiv="refresh" content="0;url={_url}">', unsafe_allow_html=True)
+
+        st.markdown("<p style='text-align:center;color:#555;font-size:0.78rem;margin-top:16px'>Cancel anytime · Secure payments via Stripe · Have a referral code? Enter it at checkout.</p>", unsafe_allow_html=True)
+
+        st.markdown("---")
+        if st.button("Sign Out", use_container_width=True):
+            _sb.auth.sign_out()
+            for _k in ('sb_user','sb_access_token','sb_refresh_token'):
+                st.session_state.pop(_k, None)
+            st.rerun()
+    st.stop()
+
+# show trial banner if trialing
+if _sub and _sub.get('status') == 'trialing' and _sub.get('trial_end'):
+    _days_left = max(0, (_dt.fromisoformat(_sub['trial_end']) - _dt.utcnow()).days)
+    st.info(f"✨ Free trial — {_days_left} day{'s' if _days_left != 1 else ''} remaining. Your card won't be charged until the trial ends.")
+
 # ── profile helpers ────────────────────────────────────────────
 def _load_profiles():
     try:
