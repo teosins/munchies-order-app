@@ -473,7 +473,8 @@ def _load_profiles():
 def _save_profile(name, settings):
     uid = st.session_state.sb_user.id
     _sb.table('location_profiles').upsert(
-        {'id': uid, 'store_name': name, 'settings': settings}
+        {'id': uid, 'store_name': name, 'settings': settings},
+        on_conflict='id,store_name'
     ).execute()
 
 def _delete_profile(name):
