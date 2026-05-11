@@ -7,7 +7,7 @@ from datetime import date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-st.set_page_config(page_title="OPAL Order Tool", page_icon="💎", layout="wide")
+st.set_page_config(page_title="OPAL Order Tool", page_icon="💎", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
