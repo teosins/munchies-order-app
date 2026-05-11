@@ -301,6 +301,16 @@ def load_raw(kova_bytes, ocs_bytes):
         m = re.search(r'_(\d+x\d+\.?\d*[gG])_', str(sku))
         return m.group(1).lower() if m else None
 
+    def extract_product_size(sku):
+        s = str(sku)
+        if '___' in s:
+            before = s.split('___')[0]
+            idx = before.find('_')
+            if idx >= 0:
+                val = before[idx+1:]
+                return val if val else None
+        return None
+
     def map_strain(row):
         pt = str(row.get('Plant Type', '') or '').lower()
         if 'indica' in pt:  return 'Indica'
@@ -322,6 +332,7 @@ def load_raw(kova_bytes, ocs_bytes):
         lambda r: extract_size(r['Supplier Sku']) if r['Classification'] == 'Flower' else None, axis=1)
     merged['Pre-Roll Size'] = merged.apply(
         lambda r: extract_preroll_size(r['Supplier Sku']) if r['Classification'] == 'Pre-Roll' else None, axis=1)
+    merged['Product Size']  = merged['Supplier Sku'].apply(extract_product_size)
     merged['Strain'] = merged.apply(map_strain, axis=1)
     merged['Pack Size']  = pd.to_numeric(merged['Pack Size'],  errors='coerce').fillna(1).astype(int)
     merged['Unit Price'] = pd.to_numeric(merged['Unit Price'], errors='coerce')
@@ -795,184 +806,113 @@ with tab2:
 # ══════════════════════════════════════════════════════════════
 with tab3:
     st.markdown("### 🗂️ Menu Builder")
-    st.caption("Set how many SKUs you want on your shelf per category and strain type. The tool shows your gaps and suggests what to order.")
+    st.caption("Set how many SKUs you want on your shelf per category, size, and strain. The tool shows your gaps and suggests what to order.")
 
     today2 = date.today()
-    STRAINS     = ['Indica','Sativa','Hybrid','Blend']
-    FL_SIZES    = ['1g','3.5g','5g','7g','14g','28g','30g']
-    STRAIN_CATS = ['Vapes','Edibles']
-    SIMPLE_CATS = ['Concentrates','Beverages','Capsules','Oil','Topicals','Seeds']
+    STRAINS   = ['Indica','Sativa','Hybrid','Blend']
+    ALL_CATS  = ['Flower','Pre-Roll','Vapes','Edibles','Concentrates','Beverages','Capsules','Oil','Topicals','Seeds']
+    CAT_EMOJIS = {
+        'Flower':'🌸','Pre-Roll':'🚬','Vapes':'💨','Edibles':'🍬',
+        'Concentrates':'🔬','Beverages':'🥤','Capsules':'💊',
+        'Oil':'🫙','Topicals':'🧴','Seeds':'🌱',
+    }
 
-    # detect pre-roll sizes from catalogue
-    pr_all_sizes = sorted(
-        merged_raw[(merged_raw['Classification']=='Pre-Roll') & merged_raw['Pre-Roll Size'].notna()]
-        ['Pre-Roll Size'].unique().tolist(),
-        key=lambda s: (int(s.split('x')[0]), float(s.split('x')[1].rstrip('g')))
-    )
+    def sort_size_key(s):
+        import re as _re
+        m = _re.match(r'^(\d+)x(\d+\.?\d*)g?$', str(s))
+        if m: return (0, int(m.group(1)), float(m.group(2)))
+        m = _re.match(r'^(\d+\.?\d*)g$', str(s))
+        if m: return (1, 0, float(m.group(1)))
+        m = _re.match(r'^(\d+\.?\d*)ml$', str(s))
+        if m: return (2, 0, float(m.group(1)))
+        m = _re.match(r'^(\d+\.?\d*)mg$', str(s))
+        if m: return (3, 0, float(m.group(1)))
+        return (99, 0, 0)
+
+    # detect sizes per category from catalogue
+    cat_sizes = {}
+    for cat in ALL_CATS:
+        raw = merged_raw[(merged_raw['Classification']==cat) & merged_raw['Product Size'].notna()]['Product Size'].unique().tolist()
+        try:    cat_sizes[cat] = sorted(raw, key=sort_size_key)
+        except: cat_sizes[cat] = sorted(raw)
 
     # ── target settings ───────────────────────────────────────
     st.markdown("#### Target SKU Counts")
-
-    with st.expander("🌸 Flower targets by weight & strain", expanded=True):
-        st.caption("Enter how many unique SKUs you want on shelf for each weight × strain combination.")
-        flower_targets = {}
-        header_cols = st.columns([2] + [1]*4)
-        header_cols[0].markdown("**Weight**")
-        for i, s in enumerate(STRAINS):
-            header_cols[i+1].markdown(f"**{s}**")
-        for size in FL_SIZES:
-            row_cols = st.columns([2] + [1]*4)
-            row_cols[0].markdown(f"`{size}`")
-            for i, strain in enumerate(STRAINS):
-                default = 4 if size in ['3.5g','7g'] and strain in ['Indica','Sativa'] else \
-                          2 if size in ['3.5g','7g'] and strain in ['Hybrid','Blend'] else 1
-                flower_targets[(size, strain)] = row_cols[i+1].number_input(
-                    "", value=default, min_value=0, max_value=30,
-                    key=f"mb_fl_{size}_{strain}", label_visibility="collapsed")
-
-    pr_targets = {}
-    with st.expander("🚬 Pre-Roll targets by size & strain", expanded=True):
-        if not pr_all_sizes:
-            st.caption("No pre-roll sizes detected in your catalogue.")
-        else:
-            st.caption("Enter how many unique SKUs you want on shelf for each size × strain combination.")
-            pr_header = st.columns([2] + [1]*4)
-            pr_header[0].markdown("**Size**")
-            for i, s in enumerate(STRAINS):
-                pr_header[i+1].markdown(f"**{s}**")
-            for size in pr_all_sizes:
-                row_cols = st.columns([2] + [1]*4)
-                row_cols[0].markdown(f"`{size}`")
+    mb_targets = {}
+    for cat in ALL_CATS:
+        sizes = cat_sizes[cat]
+        emoji = CAT_EMOJIS[cat]
+        with st.expander(f"{emoji} {cat} — by size & strain", expanded=(cat == 'Flower')):
+            if not sizes:
+                st.caption(f"No {cat} sizes detected in your catalogue.")
+                continue
+            st.caption(f"{len(sizes)} sizes detected from your catalogue.")
+            hdr = st.columns([2] + [1]*4)
+            hdr[0].markdown("**Size**")
+            for i, s in enumerate(STRAINS): hdr[i+1].markdown(f"**{s}**")
+            for size in sizes:
+                rc = st.columns([2] + [1]*4)
+                rc[0].markdown(f"`{size}`")
                 for i, strain in enumerate(STRAINS):
-                    pr_targets[(size, strain)] = row_cols[i+1].number_input(
-                        "", value=0, min_value=0, max_value=30,
-                        key=f"mb_pr_{size}_{strain}", label_visibility="collapsed")
-
-    strain_cat_targets = {}
-    with st.expander("💨 Vapes & Edibles by strain", expanded=True):
-        st.caption("Enter how many unique SKUs you want on shelf for each category × strain combination.")
-        sc_header = st.columns([2] + [1]*4)
-        sc_header[0].markdown("**Category**")
-        for i, s in enumerate(STRAINS):
-            sc_header[i+1].markdown(f"**{s}**")
-        cat_strain_defaults = {'Vapes': [3,3,2,1], 'Edibles': [3,3,2,1]}
-        for cat in STRAIN_CATS:
-            row_cols = st.columns([2] + [1]*4)
-            row_cols[0].markdown(f"**{cat}**")
-            for i, strain in enumerate(STRAINS):
-                strain_cat_targets[(cat, strain)] = row_cols[i+1].number_input(
-                    "", value=cat_strain_defaults[cat][i], min_value=0, max_value=30,
-                    key=f"mb_sc_{cat}_{strain}", label_visibility="collapsed")
-
-    with st.expander("📦 Other category targets", expanded=True):
-        simple_cols = st.columns(3)
-        cat_targets = {}
-        simple_defaults = {'Concentrates':8,'Beverages':6,'Capsules':4,'Oil':4,'Topicals':3,'Seeds':2}
-        for i, cat in enumerate(SIMPLE_CATS):
-            cat_targets[cat] = simple_cols[i % 3].number_input(
-                cat, value=simple_defaults.get(cat, 5), min_value=0, max_value=50,
-                key=f"mb_cat_{cat}")
+                    default = 0
+                    if cat == 'Flower':
+                        default = 4 if size in ['3.5g','7g'] and strain in ['Indica','Sativa'] else \
+                                  2 if size in ['3.5g','7g'] and strain in ['Hybrid','Blend'] else 1
+                    mb_targets[(cat, size, strain)] = rc[i+1].number_input(
+                        "", value=default, min_value=0, max_value=50,
+                        key=f"mb_{cat}_{size}_{strain}", label_visibility="collapsed")
 
     st.markdown("---")
 
-    # ── current shelf analysis ────────────────────────────────
-    on_shelf = merged_raw[merged_raw['In Stock Qty'] > 0].copy()
+    # ── shelf counts ──────────────────────────────────────────
+    on_shelf     = merged_raw[merged_raw['In Stock Qty'] > 0].copy()
+    shelf_counts = on_shelf.groupby(['Classification','Product Size','Strain'])['SKU'].nunique().reset_index()
+    shelf_counts.columns = ['Category','Size','Strain','On Shelf']
 
-    flower_shelf  = on_shelf[on_shelf['Classification'] == 'Flower'].copy()
-    flower_counts = flower_shelf.groupby(['Flower Size','Strain'])['SKU'].nunique().reset_index()
-    flower_counts.columns = ['Size','Strain','On Shelf']
-
-    pr_shelf_data = on_shelf[on_shelf['Classification'] == 'Pre-Roll'].groupby(['Pre-Roll Size','Strain'])['SKU'].nunique().reset_index()
-    pr_shelf_data.columns = ['Size','Strain','On Shelf']
-
-    sc_shelf = on_shelf[on_shelf['Classification'].isin(STRAIN_CATS)].groupby(['Classification','Strain'])['SKU'].nunique().reset_index()
-    sc_shelf.columns = ['Category','Strain','On Shelf']
-
-    simple_shelf = on_shelf[on_shelf['Classification'].isin(SIMPLE_CATS)].groupby('Classification')['SKU'].nunique().reset_index()
-    simple_shelf.columns = ['Category','On Shelf']
-
-    # ── gap display helpers ───────────────────────────────────
+    # ── gap helpers ───────────────────────────────────────────
     def highlight_gap(val):
         if val > 0: return 'background-color:#FFC7CE;font-weight:bold'
         return 'background-color:#C6EFCE'
 
-    def show_strain_grid(pivot_shelf, pivot_target, pivot_gap):
-        for piv in [pivot_shelf, pivot_target, pivot_gap]:
+    def show_size_strain_grid(cat, sizes):
+        rows = []
+        for size in sizes:
+            for strain in STRAINS:
+                tgt = mb_targets.get((cat, size, strain), 0)
+                cur = int(shelf_counts[
+                    (shelf_counts['Category']==cat) &
+                    (shelf_counts['Size']==size) &
+                    (shelf_counts['Strain']==strain)
+                ]['On Shelf'].sum())
+                rows.append({'Size': size, 'Strain': strain, 'Target': tgt, 'On Shelf': cur, 'Gap': max(0, tgt - cur)})
+        if not rows:
+            return pd.DataFrame(0, index=sizes, columns=STRAINS)
+        df  = pd.DataFrame(rows)
+        ps  = df.pivot_table(index='Size', columns='Strain', values='On Shelf', fill_value=0).reindex(sizes).fillna(0).astype(int)
+        pt  = df.pivot_table(index='Size', columns='Strain', values='Target',   fill_value=0).reindex(sizes).fillna(0).astype(int)
+        pg  = df.pivot_table(index='Size', columns='Strain', values='Gap',      fill_value=0).reindex(sizes).fillna(0).astype(int)
+        for piv in [ps, pt, pg]:
             for col in STRAINS:
                 if col not in piv.columns: piv[col] = 0
         gc1, gc2, gc3 = st.columns(3)
-        gc1.caption("On Shelf now");        gc1.dataframe(pivot_shelf[STRAINS],  use_container_width=True)
-        gc2.caption("Your target");         gc2.dataframe(pivot_target[STRAINS], use_container_width=True)
-        gc3.caption("Gap (need to order)"); gc3.dataframe(pivot_gap[STRAINS].style.map(highlight_gap), use_container_width=True)
-        return pivot_gap[STRAINS]
+        gc1.caption("On Shelf now");        gc1.dataframe(ps[STRAINS],  use_container_width=True)
+        gc2.caption("Your target");         gc2.dataframe(pt[STRAINS],  use_container_width=True)
+        gc3.caption("Gap (need to order)"); gc3.dataframe(pg[STRAINS].style.map(highlight_gap), use_container_width=True)
+        return pg[STRAINS]
 
-    # ── gap calculation ───────────────────────────────────────
+    # ── gap display ───────────────────────────────────────────
     st.markdown("#### Current Shelf vs Target")
-
-    # Flower
-    st.markdown("**🌸 Flower**")
-    fl_rows = []
-    for size in FL_SIZES:
-        for strain in STRAINS:
-            tgt = flower_targets.get((size, strain), 0)
-            cur = flower_counts[(flower_counts['Size']==size) & (flower_counts['Strain']==strain)]['On Shelf'].sum()
-            fl_rows.append({'Weight': size, 'Strain': strain, 'Target': tgt, 'On Shelf': int(cur), 'Gap': max(0, tgt - int(cur))})
-    fl_df = pd.DataFrame(fl_rows)
-    fl_pivot_shelf  = fl_df.pivot_table(index='Weight', columns='Strain', values='On Shelf', fill_value=0).reindex(FL_SIZES).fillna(0).astype(int)
-    fl_pivot_target = fl_df.pivot_table(index='Weight', columns='Strain', values='Target',   fill_value=0).reindex(FL_SIZES).fillna(0).astype(int)
-    fl_pivot_gap    = fl_df.pivot_table(index='Weight', columns='Strain', values='Gap',      fill_value=0).reindex(FL_SIZES).fillna(0).astype(int)
-    fl_pivot_gap    = show_strain_grid(fl_pivot_shelf, fl_pivot_target, fl_pivot_gap)
-
-    # Pre-Roll by size × strain
-    st.markdown("**🚬 Pre-Roll**")
-    pr_pivot_gap = pd.DataFrame(0, index=pr_all_sizes, columns=STRAINS)
-    if pr_all_sizes:
-        pr_rows = []
-        for size in pr_all_sizes:
-            for strain in STRAINS:
-                tgt = pr_targets.get((size, strain), 0)
-                cur = pr_shelf_data[(pr_shelf_data['Size']==size) & (pr_shelf_data['Strain']==strain)]['On Shelf'].sum()
-                pr_rows.append({'Size': size, 'Strain': strain, 'Target': tgt, 'On Shelf': int(cur), 'Gap': max(0, tgt - int(cur))})
-        pr_df = pd.DataFrame(pr_rows)
-        pr_p_shelf  = pr_df.pivot_table(index='Size', columns='Strain', values='On Shelf', fill_value=0).reindex(pr_all_sizes).fillna(0).astype(int)
-        pr_p_target = pr_df.pivot_table(index='Size', columns='Strain', values='Target',   fill_value=0).reindex(pr_all_sizes).fillna(0).astype(int)
-        pr_p_gap    = pr_df.pivot_table(index='Size', columns='Strain', values='Gap',      fill_value=0).reindex(pr_all_sizes).fillna(0).astype(int)
-        pr_pivot_gap = show_strain_grid(pr_p_shelf, pr_p_target, pr_p_gap)
-    else:
-        st.caption("No pre-roll sizes detected in your catalogue.")
-
-    # Vapes & Edibles by strain
-    sc_pivot_gaps = {}
-    cat_emojis = {'Vapes':'💨','Edibles':'🍬'}
-    for cat in STRAIN_CATS:
-        st.markdown(f"**{cat_emojis[cat]} {cat}**")
-        sc_rows = []
-        for strain in STRAINS:
-            tgt = strain_cat_targets.get((cat, strain), 0)
-            cur = sc_shelf[(sc_shelf['Category']==cat) & (sc_shelf['Strain']==strain)]['On Shelf'].sum()
-            sc_rows.append({'Strain': strain, 'Target': tgt, 'On Shelf': int(cur), 'Gap': max(0, tgt - int(cur))})
-        sc_df_cat = pd.DataFrame(sc_rows).set_index('Strain')
-        sc_p_shelf  = sc_df_cat[['On Shelf']].T
-        sc_p_target = sc_df_cat[['Target']].T
-        sc_p_gap    = sc_df_cat[['Gap']].T
-        sc_pivot_gaps[cat] = show_strain_grid(sc_p_shelf, sc_p_target, sc_p_gap)
-
-    # Simple categories
-    st.markdown("**📦 Other Categories**")
-    simple_rows = []
-    for cat in SIMPLE_CATS:
-        tgt = cat_targets.get(cat, 0)
-        cur = simple_shelf[simple_shelf['Category']==cat]['On Shelf'].sum()
-        gap = max(0, tgt - int(cur))
-        simple_rows.append({'Category': cat, 'On Shelf': int(cur), 'Target': tgt, 'Gap': gap, 'Status': '🔴 Need' if gap > 0 else '🟢 OK'})
-    simple_df = pd.DataFrame(simple_rows)
-    st.dataframe(simple_df, hide_index=True, use_container_width=True)
+    cat_pivot_gaps = {}
+    for cat in ALL_CATS:
+        sizes = cat_sizes[cat]
+        if not sizes: continue
+        if not any(mb_targets.get((cat, s, st_), 0) > 0 for s in sizes for st_ in STRAINS): continue
+        st.markdown(f"**{CAT_EMOJIS[cat]} {cat}**")
+        cat_pivot_gaps[cat] = show_size_strain_grid(cat, sizes)
 
     # ── suggestions ───────────────────────────────────────────
-    sc_gap_total = sum(sc_pivot_gaps[cat].values.sum() for cat in STRAIN_CATS)
-    gaps_exist   = fl_pivot_gap.values.sum() > 0 or pr_pivot_gap.values.sum() > 0 or sc_gap_total > 0 or simple_df['Gap'].sum() > 0
-
-    if not gaps_exist:
+    total_gaps = sum(int(pg.values.sum()) for pg in cat_pivot_gaps.values())
+    if not cat_pivot_gaps or total_gaps == 0:
         st.success("✅ Your shelf is fully stocked to target across all categories!")
     else:
         st.markdown("---")
@@ -980,99 +920,31 @@ with tab3:
         st.caption("SKUs you've sold before (priority) or available on OCS — order 1 case each to fill gaps.")
 
         suggestions = []
-
-        # Flower
-        for size in FL_SIZES:
-            for strain in STRAINS:
-                gap = fl_pivot_gap.at[size, strain] if size in fl_pivot_gap.index else 0
-                if gap <= 0: continue
-                candidates = merged_raw[
-                    (merged_raw['Classification'] == 'Flower') &
-                    (merged_raw['Flower Size'] == size) &
-                    (merged_raw['Strain'] == strain) &
-                    (merged_raw['In Stock Qty'] == 0) &
-                    (merged_raw['Stock Status'] == 'YES')
-                ].copy()
-                candidates['_sold'] = candidates['Sales (60 Days)'] > 0
-                candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
-                for _, r in candidates.head(gap).iterrows():
-                    suggestions.append({
-                        'Category': 'Flower', 'Detail': size, 'Strain': strain,
-                        'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
-                        'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
-                        'Cases': 1, 'Pack Size': int(r['Pack Size']),
-                        'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
-                        'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
-                    })
-
-        # Pre-Roll by size × strain
-        for size in pr_all_sizes:
-            for strain in STRAINS:
-                gap = int(pr_pivot_gap.at[size, strain]) if size in pr_pivot_gap.index else 0
-                if gap <= 0: continue
-                candidates = merged_raw[
-                    (merged_raw['Classification'] == 'Pre-Roll') &
-                    (merged_raw['Pre-Roll Size'] == size) &
-                    (merged_raw['Strain'] == strain) &
-                    (merged_raw['In Stock Qty'] == 0) &
-                    (merged_raw['Stock Status'] == 'YES')
-                ].copy()
-                candidates['_sold'] = candidates['Sales (60 Days)'] > 0
-                candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
-                for _, r in candidates.head(gap).iterrows():
-                    suggestions.append({
-                        'Category': 'Pre-Roll', 'Detail': size, 'Strain': strain,
-                        'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
-                        'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
-                        'Cases': 1, 'Pack Size': int(r['Pack Size']),
-                        'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
-                        'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
-                    })
-
-        # Vapes & Edibles by strain
-        for cat in STRAIN_CATS:
-            pg = sc_pivot_gaps[cat]
-            for strain in STRAINS:
-                gap = int(pg.at['Gap', strain]) if 'Gap' in pg.index and strain in pg.columns else 0
-                if gap <= 0: continue
-                candidates = merged_raw[
-                    (merged_raw['Classification'] == cat) &
-                    (merged_raw['Strain'] == strain) &
-                    (merged_raw['In Stock Qty'] == 0) &
-                    (merged_raw['Stock Status'] == 'YES')
-                ].copy()
-                candidates['_sold'] = candidates['Sales (60 Days)'] > 0
-                candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
-                for _, r in candidates.head(gap).iterrows():
-                    suggestions.append({
-                        'Category': cat, 'Detail': '—', 'Strain': strain,
-                        'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
-                        'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
-                        'Cases': 1, 'Pack Size': int(r['Pack Size']),
-                        'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
-                        'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
-                    })
-
-        # Simple categories
-        for cat in SIMPLE_CATS:
-            gap = int(simple_df[simple_df['Category']==cat]['Gap'].sum())
-            if gap <= 0: continue
-            candidates = merged_raw[
-                (merged_raw['Classification'] == cat) &
-                (merged_raw['In Stock Qty'] == 0) &
-                (merged_raw['Stock Status'] == 'YES')
-            ].copy()
-            candidates['_sold'] = candidates['Sales (60 Days)'] > 0
-            candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
-            for _, r in candidates.head(gap).iterrows():
-                suggestions.append({
-                    'Category': cat, 'Detail': '—', 'Strain': '—',
-                    'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
-                    'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
-                    'Cases': 1, 'Pack Size': int(r['Pack Size']),
-                    'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
-                    'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
-                })
+        for cat, pg in cat_pivot_gaps.items():
+            for size in cat_sizes[cat]:
+                if size not in pg.index: continue
+                for strain in STRAINS:
+                    if strain not in pg.columns: continue
+                    gap = int(pg.at[size, strain])
+                    if gap <= 0: continue
+                    candidates = merged_raw[
+                        (merged_raw['Classification'] == cat) &
+                        (merged_raw['Product Size'] == size) &
+                        (merged_raw['Strain'] == strain) &
+                        (merged_raw['In Stock Qty'] == 0) &
+                        (merged_raw['Stock Status'] == 'YES')
+                    ].copy()
+                    candidates['_sold'] = candidates['Sales (60 Days)'] > 0
+                    candidates = candidates.sort_values(['_sold','Sales (60 Days)'], ascending=[False,False])
+                    for _, r in candidates.head(gap).iterrows():
+                        suggestions.append({
+                            'Category': cat, 'Size': size, 'Strain': strain,
+                            'Product': r['Product'], 'OCS Variant #': r['Supplier Sku'],
+                            'OCS Item #': str(r['OCS Item Number']).split('.')[0] if pd.notna(r.get('OCS Item Number')) else '—',
+                            'Cases': 1, 'Pack Size': int(r['Pack Size']),
+                            'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
+                            'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
+                        })
 
         if suggestions:
             sug_df = pd.DataFrame(suggestions)
