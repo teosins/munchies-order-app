@@ -1728,26 +1728,91 @@ with tab3:
                             'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
                         })
 
-        if suggestions:
-            sug_df = pd.DataFrame(suggestions)
-            if sug_df['Sub-Type'].eq('').all():
-                sug_df = sug_df.drop(columns=['Sub-Type'])
-            sug_df['Est. Cost'] = (sug_df['Cases'] * sug_df['Pack Size'] * sug_df['Unit Price'].fillna(0)).round(2)
-            sug_df['Unit Price'] = sug_df['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) and x > 0 else '—')
-            sug_df['Est. Cost']  = sug_df['Est. Cost'].map(lambda x: f'${x:,.2f}' if x > 0 else '—')
-            st.dataframe(sug_df, hide_index=True, use_container_width=True)
+        if 'menu_cart' not in st.session_state:
+            st.session_state['menu_cart'] = {}
 
-            menu_upload = pd.DataFrame([{'SKU': r['OCS Variant #'], 'Quantity': r['Cases']} for r in suggestions])
-            menu_buf = io.BytesIO()
-            with pd.ExcelWriter(menu_buf, engine='openpyxl') as writer:
-                menu_upload.to_excel(writer, sheet_name='MasterCatalogue', index=False)
-            menu_buf.seek(0)
-            st.download_button(
-                label="📤 Download OCS Upload File for Menu Order (.xlsx)",
-                data=menu_buf,
-                file_name=f'OCS_MenuOrder_{today2.strftime("%Y%m%d")}.xlsx',
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                use_container_width=True,
-            )
+        if suggestions:
+            _has_subtype = any(s.get('Sub-Type') for s in suggestions)
+
+            # ── header row ─────────────────────────────────────
+            _hw = [3.5, 0.9, 0.65, 0.7, 0.7, 0.8, 0.55]
+            _hh = st.columns(_hw)
+            for _lbl, _col in zip(["Product","Category","Size","Strain","Prev Sold","Est. Cost",""], _hh):
+                _col.markdown(f"<small><b>{_lbl}</b></small>", unsafe_allow_html=True)
+            st.markdown("<hr style='margin:2px 0 6px 0;border-color:rgba(137,212,245,0.15)'>",
+                        unsafe_allow_html=True)
+
+            # ── suggestion rows ─────────────────────────────────
+            for _si, _sr in enumerate(suggestions):
+                _sku    = _sr['OCS Variant #']
+                _in_cart = _sku in st.session_state['menu_cart']
+                _up     = _sr.get('Unit Price') or 0
+                _est    = _sr['Cases'] * _sr['Pack Size'] * _up
+                _rc     = st.columns(_hw)
+                _label  = _sr['Product']
+                if _has_subtype and _sr.get('Sub-Type'):
+                    _label = f"[{_sr['Sub-Type']}] {_label}"
+                _rc[0].caption(_label[:52])
+                _rc[1].caption(f"{_sr['Category']} {_sr['Size']}")
+                _rc[2].caption(_sr['Size'])
+                _rc[3].caption(_sr['Strain'])
+                _rc[4].caption(str(_sr.get('Prev. Sold (60d)', 0)))
+                _rc[5].caption(f"${_est:,.2f}" if _est else "—")
+                if _rc[6].button("✓" if _in_cart else "+",
+                                 key=f"sg_{_si}", use_container_width=True,
+                                 help="Remove from cart" if _in_cart else "Add to cart"):
+                    if _in_cart:
+                        del st.session_state['menu_cart'][_sku]
+                    else:
+                        st.session_state['menu_cart'][_sku] = dict(_sr)
+                    st.rerun()
+
+            # ── cart ───────────────────────────────────────────
+            _cart = st.session_state['menu_cart']
+            if _cart:
+                st.markdown("---")
+                st.markdown("#### 🛒 Menu Order Cart")
+                _cart_total = 0.0
+                _ch = st.columns([3.5, 1.0, 0.8, 0.6, 0.8, 0.45])
+                for _lbl, _c in zip(["Product","Category · Size","Strain","Cases","Est. Cost",""], _ch):
+                    _c.markdown(f"<small><b>{_lbl}</b></small>", unsafe_allow_html=True)
+                st.markdown("<hr style='margin:2px 0 6px 0;border-color:rgba(137,212,245,0.15)'>",
+                            unsafe_allow_html=True)
+                for _csku, _ci in list(_cart.items()):
+                    _cup  = _ci.get('Unit Price') or 0
+                    _ccases = _ci.get('Cases', 1)
+                    _cest = _ccases * _ci['Pack Size'] * _cup
+                    _cart_total += _cest
+                    _cr = st.columns([3.5, 1.0, 0.8, 0.6, 0.8, 0.45])
+                    _cr[0].caption(_ci['Product'][:50])
+                    _cr[1].caption(f"{_ci['Category']} · {_ci['Size']}")
+                    _cr[2].caption(_ci['Strain'])
+                    _new_c = _cr[3].number_input("", value=_ccases, min_value=1, max_value=99,
+                                                  key=f"cart_c_{_csku}", label_visibility="collapsed")
+                    if _new_c != _ccases:
+                        st.session_state['menu_cart'][_csku]['Cases'] = _new_c
+                        st.rerun()
+                    _cr[4].caption(f"${_cest:,.2f}" if _cest else "—")
+                    if _cr[5].button("✕", key=f"crm_{_csku}", use_container_width=True):
+                        del st.session_state['menu_cart'][_csku]
+                        st.rerun()
+
+                st.markdown(f"**Cart Total: ${_cart_total:,.2f}** &nbsp;·&nbsp; {len(_cart)} SKU(s)",
+                            unsafe_allow_html=True)
+
+                _cart_dl  = pd.DataFrame([{'SKU': k, 'Quantity': v['Cases']} for k, v in _cart.items()])
+                _cart_buf = io.BytesIO()
+                with pd.ExcelWriter(_cart_buf, engine='openpyxl') as _cw:
+                    _cart_dl.to_excel(_cw, sheet_name='MasterCatalogue', index=False)
+                _cart_buf.seek(0)
+                st.download_button(
+                    "📤 Download Cart as OCS Upload File (.xlsx)",
+                    data=_cart_buf,
+                    file_name=f'OCS_MenuOrder_{today2.strftime("%Y%m%d")}.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True,
+                )
+            else:
+                st.info("Click **+** next to any SKU above to build your order.", icon="🛒")
         else:
             st.info("No matching SKUs found in the OCS catalogue to fill the gaps. Try adjusting your targets or check the catalogue for availability.")
