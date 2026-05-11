@@ -487,32 +487,33 @@ _SUBCAT_DEFS = [  # kept for profile save compat
     ('Concentrates', ['Shatter','Resin','Rosin','Wax','Distillate','Diamonds'],                         14),
 ]
 
-_ADV_CATS = ['Flower','Vapes','Pre-Roll','Edibles','Topicals','Concentrates']
+_ADV_CATS = ['Flower','Vapes','Pre-Roll','Edibles','Topicals','Concentrates','Oil','Capsules','Beverages','Seeds']
 
 _CAT_SIZE_DEFS = {
-    'Flower':       [('1g',7),('3.5g',14),('5g',14),('7g',14),('14g',21),('28g',30),('30g',30),('other',14)],
+    'Flower':       [('1g',7),('2g',14),('3.5g',14),('5g',14),('7g',14),('10g',21),('14g',21),('28g',30),('other',14)],
     'Vapes':        [
         ('0.2g',14),('0.3g',14),('0.4g',14),('0.45g',14),('0.5g',21),
         ('0.95g',21),('1g',21),('1.1g',21),('1.2g',21),('1.25g',21),
-        ('1.8g',21),('2g',21),('2x0.5g',21),('3g',21),('4g',21),
+        ('1.8g',21),('2g',21),('2x0.5g',21),('3g',21),('4g',21),('4.75g',21),
     ],
     'Pre-Roll':     [
         # Singles
-        ('1x0.3g',14),('1x0.35g',14),('1x0.4g',14),('1x0.5g',14),
-        ('1x0.6g',14),('1x0.7g',14),('1x0.75g',14),('1x1g',14),
-        ('1x1.5g',14),('1x2g',14),('1x7g',21),('1x14g',30),('1g',14),
+        ('1g',14),('1x0.3g',14),('1x0.35g',14),('1x0.4g',14),('1x0.5g',14),
+        ('1x0.6g',14),('1x0.7g',14),('1x0.75g',14),('1x0.8g',14),('1x1g',14),
+        ('1x1.5g',14),('1x2g',14),('1x7g',21),('1x14g',30),
         # 2-packs
-        ('2x0.35g',21),('2x0.5g',21),('2x1g',21),
+        ('2x0.35g',21),('2x0.5g',21),('2x0.8g',21),('2x1g',21),
         # 3-packs
-        ('3x0.5g',21),('3x1g',21),
+        ('3x0.5g',21),('3x0.75g',21),('3x1g',21),
         # 4-packs
         ('4x0.4g',21),('4x0.5g',21),('4x0.75g',21),('4x1g',21),
         # 5-packs
         ('5x0.3g',21),('5x0.35g',21),('5x0.4g',21),('5x0.5g',21),('5x0.6g',21),('5x1g',21),
         # 6-7-packs
-        ('6x0.5g',21),('7x0.5g',21),
+        ('6x0.5g',21),('7x0.3g',21),('7x0.5g',21),('7x0.8g',21),
         # 10-packs
-        ('10x0.3g',30),('10x0.35g',30),('10x0.4g',30),('10x0.5g',30),('10x0.75g',30),('10x1g',30),
+        ('10x0.3g',30),('10x0.35g',30),('10x0.4g',30),('10x0.5g',30),
+        ('10x0.7g',30),('10x0.75g',30),('10x1g',30),
         # 12-packs
         ('12x0.5g',30),('12x0.6g',30),
         # Large packs
@@ -520,28 +521,68 @@ _CAT_SIZE_DEFS = {
         ('40x0.5g',30),('60x0.5g',30),('70x0.4g',30),('80x0.35g',30),
     ],
     'Edibles':      [
-        # Single-unit packs (NxMg on portal = "N Pack" in SKU)
+        # Single-unit packs
         ('1 Pack',14),('2 Pack',14),('3 Pack',14),('4 Pack',14),
-        ('5 Pack',14),('6 Pack',14),('8 Pack',14),('10 Pack',14),('12 Pack',14),
-        # Multi-unit retail packs (e.g. "6x1 Pack", "10x1 Pack", "30x1 Pack")
-        ('2x1 Pack',21),('3x1 Pack',21),('4x1 Pack',21),('5x1 Pack',21),
-        ('6x1 Pack',21),('10x1 Pack',21),('12x1 Pack',21),
-        ('20x1 Pack',21),('30x1 Pack',30),
+        ('5 Pack',14),('6 Pack',14),('8 Pack',14),('10 Pack',14),('10 pack',14),
+        ('12 Pack',14),('15 Pack',14),('20 Pack',14),('25 Pack',14),
+        ('30 Pack',21),('50 Pack',21),
+        # Multi-unit retail packs
+        ('2x1 Pack',21),('3x4 Pack',21),('4x1 Pack',21),('5x1 Pack',21),('5x2 Pack',21),
+        ('6x1 Pack',21),('10x1 Pack',21),('10x2 Pack',21),('10x5 Pack',21),
+        ('12x1 Pack',21),('15x1 Pack',21),
+        ('20x1 Pack',21),('30x1 Pack',30),('50x1 Pack',30),
     ],
-    'Topicals':     [('25ml',30),('50ml',30),('100ml',30),('250ml',30)],
-    'Concentrates': [('0.5g',14),('1g',14),('2g',14),('3.5g',14)],
+    'Topicals':     [
+        ('15ml',21),('20g',21),('25g',21),('25ml',21),
+        ('30ml',21),('30g',21),('50ml',30),('50g',30),
+        ('60ml',30),('75ml',30),('85g',30),('100ml',30),
+        ('125g',30),('130g',30),('250g',30),('250ml',30),('320g',30),
+    ],
+    'Concentrates': [
+        ('0.5g',14),('0.95g',14),('1g',14),('1.2g',14),('1.25g',14),
+        ('1.3g',14),('1.5g',14),('2g',14),('2.38g',14),('3.5g',14),
+        ('1x0.5g',14),('1x0.7g',14),('1x0.75g',14),('1x0.85g',14),('1x1g',14),
+        ('1x1.5g',14),('1x2g',14),('1x3g',21),
+        ('2x0.5g',14),('2x0.7g',14),('2x1g',14),
+        ('3x0.4g',14),('3x0.45g',14),('3x0.5g',14),('3x0.6g',14),('3x0.75g',14),('3x1g',14),
+        ('4x0.5g',21),('5x0.25g',21),('5x0.4g',21),('5x0.5g',21),
+        ('6x0.25g',21),('6x0.5g',21),('8x0.25g',21),('8x0.35g',21),
+        ('10x0.5g',30),('16x0.25g',30),
+    ],
+    'Oil':          [
+        ('2ml',14),('2.3ml',14),('3ml',14),('3.5ml',14),('5.5g',14),
+        ('7ml',14),('7.3g',14),('8.23ml',14),('9ml',14),('9.2ml',14),
+        ('10x1ml',14),('12ml',21),('16ml',21),('20ml',21),
+        ('30ml',21),('31.2ml',21),('35ml',21),('40ml',21),('45ml',21),
+        ('50ml',30),('60ml',30),('90ml',30),
+    ],
+    'Capsules':     [
+        ('5 caps',14),('10 caps',14),('15 caps',14),('18 caps',14),
+        ('20 caps',14),('25 caps',14),('30 caps',21),('50 caps',21),
+        ('55 caps',21),('60 caps',21),('90 caps',30),('100 caps',30),('200 caps',30),
+    ],
+    'Beverages':    [
+        ('1 Pack',14),('4x1 Pack',14),('65ml',14),('222ml',14),('236ml',14),
+        ('330ml',14),('350ml',14),('355ml',14),
+        ('4x355ml',21),('6x355ml',21),
+    ],
+    'Seeds':        [('1 Pack',14),('4 Pack',14),('5 Pack',14),('6 Pack',14)],
 }
 
 _CAT_SUBCAT_DEFS = {
-    'Flower':       ['Whole Flower','Milled Flower','Variety Packs','Hash and Kief'],
-    'Vapes':        ['Closed Loop Pods','Disposable Pens','510 Thread Cartridges'],
-    'Pre-Roll':     ['Singles','Multipacks'],
-    'Edibles':      ['Baked Goods','Chocolates','Soft Chews','Hard Chews','Confections'],
-    'Topicals':     ['Creams And Lotions','Body Care','Face Care','Patches','Lip Care','Bath'],
-    'Concentrates': ['Shatter','Resin','Rosin','Wax','Distillate','Diamonds'],
+    'Flower':       ['Dried Flower','Hash and Kief'],
+    'Vapes':        ['510 Thread Cartridges','Closed Loop Pods','Disposable Pens'],
+    'Pre-Roll':     ['Pre-Rolls'],
+    'Edibles':      ['Baked Goods','Chocolates','Hard Edibles','Pantry','Soft Chews','Sublingual Strips'],
+    'Topicals':     ['Bath and Shower','Creams and Lotions','Intimacy Oils','Transdermal'],
+    'Concentrates': ['Distillates','Isolates','Resin','Rosin','Shatter','Wax'],
+    'Oil':          [],
+    'Capsules':     [],
+    'Beverages':    [],
+    'Seeds':        [],
 }
 
-_ADV_DEFAULTS = {'Flower':14,'Vapes':21,'Pre-Roll':14,'Edibles':14,'Topicals':30,'Concentrates':14}
+_ADV_DEFAULTS = {'Flower':14,'Vapes':21,'Pre-Roll':14,'Edibles':14,'Topicals':30,'Concentrates':14,'Oil':21,'Capsules':21,'Beverages':14,'Seeds':60}
 
 def _build_settings_from_state(prof_name):
     _prov = st.session_state.get('s_province', 'Ontario')
@@ -676,6 +717,119 @@ PROVINCE_RATES = {
 }
 _PROVINCE_LIST = list(PROVINCE_RATES.keys())
 
+# ── shared data loading ────────────────────────────────────────
+@st.cache_data(show_spinner="Loading catalogue...")
+def load_raw(kova_bytes, ocs_bytes):
+    import re
+    kova = pd.read_excel(io.BytesIO(kova_bytes), sheet_name='Reorder')
+    ocs  = pd.read_excel(io.BytesIO(ocs_bytes),  sheet_name='MasterCatalogue')
+    kova_ocs = kova[kova['Supplier'] == 'OCS'].copy()
+    kova_ocs['Supplier Sku'] = kova_ocs['Supplier Sku'].str.strip()
+    ocs['OCS Variant Number'] = ocs['OCS Variant Number'].str.strip()
+    ocs_cols = ['OCS Variant Number','OCS Item Number','Unit Price','Pack Size','Stock Status','Plant Type']
+    for _opt in ['Sub-Category','Size','Classification','Category','Product','Product Name','Variant Name','Brand']:
+        if _opt in ocs.columns and _opt not in ocs_cols:
+            ocs_cols.append(_opt)
+    merged = kova_ocs.merge(ocs[ocs_cols], left_on='Supplier Sku', right_on='OCS Variant Number', how='left')
+    if 'Sub-Category' not in merged.columns:
+        merged['Sub-Category'] = ''
+    else:
+        merged['Sub-Category'] = merged['Sub-Category'].fillna('')
+
+    def extract_size(sku):
+        m = re.search(r'_(\d+\.?\d*[gG])_', str(sku))
+        return m.group(1).lower() if m else None
+
+    def extract_preroll_size(sku):
+        m = re.search(r'_(\d+x\d+\.?\d*[gG])_', str(sku))
+        return m.group(1).lower() if m else None
+
+    def extract_product_size(sku):
+        s = str(sku)
+        if '___' in s:
+            before = s.split('___')[0]
+            idx = before.find('_')
+            if idx >= 0:
+                val = before[idx+1:]
+                return val if val else None
+        return None
+
+    def map_strain(row):
+        pt = str(row.get('Plant Type', '') or '').lower()
+        if 'indica' in pt:  return 'Indica'
+        if 'sativa' in pt:  return 'Sativa'
+        if 'hybrid' in pt:  return 'Hybrid'
+        if 'blend'  in pt:  return 'Blend'
+        name = str(row.get('Product', '') or '').lower()
+        for token in ['- indica', 'indica -', '(indica)']:
+            if token in name: return 'Indica'
+        for token in ['- sativa', 'sativa -', '(sativa)']:
+            if token in name: return 'Sativa'
+        for token in ['- hybrid', 'hybrid -', '(hybrid)']:
+            if token in name: return 'Hybrid'
+        for token in ['- blend', 'blend -', '(blend)']:
+            if token in name: return 'Blend'
+        return 'Unknown'
+
+    _lr_candidates = ['Last Received Date','Date Last Received','Last Receipt Date',
+                      'Last Purchase Date','Last PO Date','Last Order Date','Last Ordered Date']
+    _lr_col = next((c for c in _lr_candidates if c in merged.columns), None)
+    if _lr_col:
+        merged['Last Received Date'] = pd.to_datetime(merged[_lr_col], errors='coerce')
+    else:
+        merged['Last Received Date'] = pd.NaT
+
+    merged['Flower Size']   = merged.apply(
+        lambda r: extract_size(r['Supplier Sku']) if r['Classification'] == 'Flower' else None, axis=1)
+    merged['Pre-Roll Size'] = merged.apply(
+        lambda r: extract_preroll_size(r['Supplier Sku']) if r['Classification'] == 'Pre-Roll' else None, axis=1)
+    merged['Product Size']  = merged['Supplier Sku'].apply(extract_product_size)
+    merged['Strain'] = merged.apply(map_strain, axis=1)
+    merged['Pack Size']  = pd.to_numeric(merged['Pack Size'],  errors='coerce').fillna(1).astype(int)
+    merged['Unit Price'] = pd.to_numeric(merged['Unit Price'], errors='coerce')
+
+    if 'Size' in ocs.columns:
+        _sz_raw = ocs['Size'].astype(str).str.strip()
+        ocs['Product Size'] = _sz_raw.where(_sz_raw.isin(['', 'nan', 'NaN']) == False, None)
+        ocs.loc[ocs['Product Size'].isin(['nan', 'NaN', '']), 'Product Size'] = None
+    else:
+        ocs['Product Size'] = ocs['OCS Variant Number'].apply(extract_product_size)
+    ocs['Strain']       = ocs.apply(lambda r: map_strain({
+        'Plant Type': r.get('Plant Type', ''),
+        'Product': r.get('Product', r.get('Product Name', r.get('Variant Name', ''))),
+    }), axis=1)
+    ocs['Pack Size']    = pd.to_numeric(ocs['Pack Size'],  errors='coerce').fillna(1).astype(int)
+    ocs['Unit Price']   = pd.to_numeric(ocs['Unit Price'], errors='coerce')
+    _SC_TO_CLASS = {
+        'Dried Flower': 'Flower', 'Hash and Kief': 'Flower',
+        'Pre-Rolls': 'Pre-Roll',
+        '510 Thread Cartridges': 'Vapes', 'Closed Loop Pods': 'Vapes', 'Disposable Pens': 'Vapes',
+        'Baked Goods': 'Edibles', 'Chocolates': 'Edibles', 'Hard Edibles': 'Edibles',
+        'Soft Chews': 'Edibles', 'Pantry': 'Edibles', 'Sublingual Strips': 'Edibles',
+        'Beverages': 'Beverages',
+        'Distillates': 'Concentrates', 'Isolates': 'Concentrates', 'Resin': 'Concentrates',
+        'Rosin': 'Concentrates', 'Shatter': 'Concentrates', 'Wax': 'Concentrates',
+        'Oils': 'Oil',
+        'Capsules': 'Capsules',
+        'Bath and Shower': 'Topicals', 'Creams and Lotions': 'Topicals',
+        'Intimacy Oils': 'Topicals', 'Transdermal': 'Topicals',
+        'Seeds': 'Seeds',
+    }
+    if 'Sub-Category' in ocs.columns:
+        ocs['Classification'] = ocs['Sub-Category'].map(_SC_TO_CLASS)
+    elif 'Category' in ocs.columns:
+        ocs['Classification'] = ocs['Category']
+
+    if 'Product' not in ocs.columns:
+        for _pn in ['Product Name', 'Variant Name']:
+            if _pn in ocs.columns:
+                ocs['Product'] = ocs[_pn]
+                break
+    if 'Product' not in ocs.columns:
+        ocs['Product'] = ocs['OCS Variant Number']
+
+    return merged, ocs
+
 # ── sidebar ───────────────────────────────────────────────────
 with st.sidebar:
     try:
@@ -796,205 +950,200 @@ with st.sidebar:
                              for _sc in set(_ALL_LRC_CATS + _ADV_CATS)}
 
     st.markdown("---")
-    st.header("⚙️ Settings")
+    _stab1, _stab2, _stab3 = st.tabs(["⚙️ Budget & Tax", "📅 Days of Supply", "🗓️ Filters"])
 
-    # ── tax settings ──────────────────────────────────────────
-    province = st.selectbox("Province / Tax Region", _PROVINCE_LIST,
-                            index=_PROVINCE_LIST.index(st.session_state.get('s_province', _PROVINCE_LIST[0])),
-                            key="s_province")
-    if PROVINCE_RATES[province] is None:
-        tax_rate = st.number_input("Custom Tax Rate (%)", value=st.session_state.get('s_custom_tax', 13.0),
-                                   min_value=0.0, max_value=30.0, step=0.1, key="s_custom_tax") / 100
-    else:
-        tax_rate = PROVINCE_RATES[province]
-        st.caption(f"Tax rate: {tax_rate*100:.3g}%")
-
-    budget = st.number_input("Weekly Budget (tax-in)", value=st.session_state.get('s_budget', 30000),
-                             step=500, format="%d", key="s_budget")
-
-    st.markdown("**Shipping**")
-    shipping_cost  = st.number_input("Shipping Cost ($)", value=st.session_state.get('s_shipping', 0),
-                                     min_value=0, step=5, format="%d", key="s_shipping")
-    ship_in_budget = st.checkbox("Deduct shipping from order budget",
-                                  value=st.session_state.get('s_ship_in_budget', False),
-                                  key="s_ship_in_budget",
-                                  help="When checked, shipping is subtracted before calculating how much product you can order.")
-
-    effective_budget = budget - shipping_cost if ship_in_budget else budget
-    budget_pretax    = round(effective_budget / (1 + tax_rate), 2)
-    tax_amount       = effective_budget - budget_pretax
-    st.caption(f"Pre-tax: ${budget_pretax:,.2f}  |  Tax ({tax_rate*100:.3g}%): ${tax_amount:,.2f}"
-               + (f"  |  Shipping deducted: ${shipping_cost:,}" if ship_in_budget and shipping_cost > 0 else ""))
-
-    st.markdown("**Target Days of Supply**")
-    _dos_mode = st.radio("Mode", ["Simple", "Normal", "Advanced"],
-                         index=["Simple","Normal","Advanced"].index(st.session_state.get('dos_mode','Normal')),
-                         horizontal=True, key="dos_mode")
-
-    def _ni(label, default_key, default_val, col=None):
-        _w = col if col else st
-        return _w.number_input(label, value=st.session_state.get(default_key, default_val),
-                               min_value=1, max_value=90, key=default_key)
-
-    # Defaults pulled from session_state (overridden by inputs below)
-    t_preroll   = st.session_state.get('t_preroll',   14)
-    t_edibles   = st.session_state.get('t_edibles',   14)
-    t_vapes     = st.session_state.get('t_vapes',     21)
-    t_beverages = st.session_state.get('t_beverages', 14)
-    t_capsules  = st.session_state.get('t_capsules',  21)
-    t_conc      = st.session_state.get('t_conc',      14)
-    t_topicals  = st.session_state.get('t_topicals',  30)
-    t_oil       = st.session_state.get('t_oil',       21)
-    t_seeds     = st.session_state.get('t_seeds',     60)
-    SUBCAT_TARGET   = {}
-    CAT_SIZE_TARGET = {}
-    CAT_ADV_MODES   = {}
-
-    if _dos_mode == "Simple":
-        _dc1, _dc2 = st.columns(2)
-        t_flower_all = _ni("Flower",       "f_all",       14, _dc1)
-        t_preroll    = _ni("Pre-Roll",     "t_preroll",   14, _dc1)
-        t_edibles    = _ni("Edibles",      "t_edibles",   14, _dc1)
-        t_vapes      = _ni("Vapes",        "t_vapes",     21, _dc1)
-        t_beverages  = _ni("Beverages",    "t_beverages", 14, _dc1)
-        t_capsules   = _ni("Capsules",     "t_capsules",  21, _dc2)
-        t_conc       = _ni("Concentrates", "t_conc",      14, _dc2)
-        t_topicals   = _ni("Topicals",     "t_topicals",  30, _dc2)
-        t_oil        = _ni("Oil",          "t_oil",       21, _dc2)
-        t_seeds      = _ni("Seeds",        "t_seeds",     60, _dc2)
-        FLOWER_SIZE_TARGET = {s: t_flower_all for s in ['1g','3.5g','5g','7g','14g','28g','30g','other']}
-
-    elif _dos_mode == "Normal":
-        with st.expander("🌸 Flower (by size)", expanded=True):
-            fc1, fc2 = st.columns(2)
-            t_flower_1g    = _ni("1g",    "f1g",    7,  fc1)
-            t_flower_35g   = _ni("3.5g",  "f35g",  14,  fc1)
-            t_flower_5g    = _ni("5g",    "f5g",   14,  fc1)
-            t_flower_7g    = _ni("7g",    "f7g",   14,  fc1)
-            t_flower_14g   = _ni("14g",   "f14g",  21,  fc2)
-            t_flower_28g   = _ni("28g",   "f28g",  30,  fc2)
-            t_flower_30g   = _ni("30g",   "f30g",  30,  fc2)
-            t_flower_other = _ni("Other", "fother",14,  fc2)
-        FLOWER_SIZE_TARGET = {
-            '1g': t_flower_1g, '3.5g': t_flower_35g, '5g': t_flower_5g,
-            '7g': t_flower_7g, '14g': t_flower_14g, '28g': t_flower_28g,
-            '30g': t_flower_30g, 'other': t_flower_other,
-        }
-        _dc1, _dc2 = st.columns(2)
-        t_preroll   = _ni("Pre-Roll",     "t_preroll",   14, _dc1)
-        t_edibles   = _ni("Edibles",      "t_edibles",   14, _dc1)
-        t_vapes     = _ni("Vapes",        "t_vapes",     21, _dc1)
-        t_beverages = _ni("Beverages",    "t_beverages", 14, _dc1)
-        t_capsules  = _ni("Capsules",     "t_capsules",  21, _dc1)
-        t_conc      = _ni("Concentrates", "t_conc",      14, _dc2)
-        t_topicals  = _ni("Topicals",     "t_topicals",  30, _dc2)
-        t_oil       = _ni("Oil",          "t_oil",       21, _dc2)
-        t_seeds     = _ni("Seeds",        "t_seeds",     60, _dc2)
-
-    else:  # Advanced — per-category size vs subcat toggle
-        # Lookup dict for default days per size (from _CAT_SIZE_DEFS)
-        _sz_defaults = {_acat: dict(_CAT_SIZE_DEFS.get(_acat,[])) for _acat in _ADV_CATS}
-
-        for _acat in _ADV_CATS:
-            _akey  = f"adv_{_acat.replace('-','_').replace(' ','_')}_mode"
-            _icon  = "🌸" if _acat == "Flower" else "🔹"
-            with st.expander(f"{_icon} {_acat}"):
-                _atog = st.radio("", ["By Size","By Subcategory"], horizontal=True,
-                                 index=["By Size","By Subcategory"].index(
-                                     st.session_state.get(_akey,"By Size")),
-                                 key=_akey, label_visibility="collapsed")
-                CAT_ADV_MODES[_acat] = _atog
-                _ac1, _ac2 = st.columns(2)
-                if _atog == "By Size":
-                    for _ai, _asz in enumerate(_shared_cat_sizes[_acat]):
-                        _adef = _sz_defaults[_acat].get(_asz, _ADV_DEFAULTS.get(_acat, 14))
-                        _ask  = f"sz_{_acat}_{_asz}".replace('-','_').replace(' ','_')
-                        _v    = (_ac1 if _ai%2==0 else _ac2).number_input(
-                            _asz, value=st.session_state.get(_ask, _adef),
-                            min_value=1, max_value=90, key=_ask)
-                        CAT_SIZE_TARGET[(_acat, _asz)] = _v
-                else:
-                    _def_sc = _ADV_DEFAULTS.get(_acat, 14)
-                    for _ai, _asc in enumerate(_CAT_SUBCAT_DEFS[_acat]):
-                        _ask = f"sc_{_acat}_{_asc}".replace(' ','_').replace('-','_').replace('/','_')
-                        _v   = (_ac1 if _ai%2==0 else _ac2).number_input(
-                            _asc, value=st.session_state.get(_ask, _def_sc),
-                            min_value=1, max_value=90, key=_ask)
-                        SUBCAT_TARGET[(_acat, _asc)] = _v
-
-        # Build FLOWER_SIZE_TARGET from CAT_SIZE_TARGET when Flower is By Size
-        if CAT_ADV_MODES.get('Flower') == 'By Size':
-            FLOWER_SIZE_TARGET = {sz: CAT_SIZE_TARGET.get(('Flower', sz), _sz_defaults['Flower'].get(sz, 14))
-                                  for sz in _shared_cat_sizes['Flower']}
+    with _stab1:
+        province = st.selectbox("Province / Tax Region", _PROVINCE_LIST,
+                                index=_PROVINCE_LIST.index(st.session_state.get('s_province', _PROVINCE_LIST[0])),
+                                key="s_province")
+        if PROVINCE_RATES[province] is None:
+            tax_rate = st.number_input("Custom Tax Rate (%)", value=st.session_state.get('s_custom_tax', 13.0),
+                                       min_value=0.0, max_value=30.0, step=0.1, key="s_custom_tax") / 100
         else:
-            FLOWER_SIZE_TARGET = {'other': _ADV_DEFAULTS['Flower']}
+            tax_rate = PROVINCE_RATES[province]
+            st.caption(f"Tax rate: {tax_rate*100:.3g}%")
 
-        st.markdown("**Other Categories**")
-        _dc1, _dc2 = st.columns(2)
-        t_beverages = _ni("Beverages", "t_beverages", 14, _dc1)
-        t_capsules  = _ni("Capsules",  "t_capsules",  21, _dc1)
-        t_oil       = _ni("Oil",       "t_oil",       21, _dc2)
-        t_seeds     = _ni("Seeds",     "t_seeds",     60, _dc2)
+        budget = st.number_input("Weekly Budget (tax-in)", value=st.session_state.get('s_budget', 30000),
+                                 step=500, format="%d", key="s_budget")
 
-    TARGET = {
-        'Pre-Roll': t_preroll, 'Edibles': t_edibles, 'Vapes': t_vapes,
-        'Beverages': t_beverages, 'Capsules': t_capsules, 'Concentrates': t_conc,
-        'Topicals': t_topicals, 'Oil': t_oil, 'Seeds': t_seeds,
-        'Flower': st.session_state.get('f_all', 14),
-    }
+        st.markdown("**Shipping**")
+        shipping_cost  = st.number_input("Shipping Cost ($)", value=st.session_state.get('s_shipping', 0),
+                                         min_value=0, step=5, format="%d", key="s_shipping")
+        ship_in_budget = st.checkbox("Deduct shipping from order budget",
+                                      value=st.session_state.get('s_ship_in_budget', False),
+                                      key="s_ship_in_budget",
+                                      help="When checked, shipping is subtracted before calculating how much product you can order.")
 
-    # ── Last Received Date cutoff ─────────────────────────────
-    st.markdown("---")
-    st.markdown("**🗓️ Last Received Cutoff**")
-    st.caption("Exclude SKUs not received within N days. 0 = no filter.")
+        effective_budget = budget - shipping_cost if ship_in_budget else budget
+        budget_pretax    = round(effective_budget / (1 + tax_rate), 2)
+        tax_amount       = effective_budget - budget_pretax
+        st.caption(f"Pre-tax: ${budget_pretax:,.2f}  |  Tax ({tax_rate*100:.3g}%): ${tax_amount:,.2f}"
+                   + (f"  |  Shipping deducted: ${shipping_cost:,}" if ship_in_budget and shipping_cost > 0 else ""))
 
-    _lr_mode = st.radio("Cutoff Mode", ["Simple","Advanced"],
-                        index=["Simple","Advanced"].index(st.session_state.get('lr_mode','Simple')),
-                        horizontal=True, key="lr_mode")
+    with _stab2:
+        st.markdown("**Target Days of Supply**")
+        _dos_mode = st.radio("Mode", ["Simple", "Normal", "Advanced"],
+                             index=["Simple","Normal","Advanced"].index(st.session_state.get('dos_mode','Normal')),
+                             horizontal=True, key="dos_mode")
 
-    _lr_cat_defs = {
-        'Flower':60,'Vapes':90,'Pre-Roll':60,'Edibles':120,
-        'Concentrates':90,'Topicals':180,'Oil':180,
-        'Capsules':180,'Beverages':120,'Seeds':365,
-    }
+        def _ni(label, default_key, default_val, col=None):
+            _w = col if col else st
+            return _w.number_input(label, value=st.session_state.get(default_key, default_val),
+                                   min_value=1, max_value=90, key=default_key)
 
-    LAST_RECEIVED_CUTOFF = {}
+        # Defaults pulled from session_state (overridden by inputs below)
+        t_preroll   = st.session_state.get('t_preroll',   14)
+        t_edibles   = st.session_state.get('t_edibles',   14)
+        t_vapes     = st.session_state.get('t_vapes',     21)
+        t_beverages = st.session_state.get('t_beverages', 14)
+        t_capsules  = st.session_state.get('t_capsules',  21)
+        t_conc      = st.session_state.get('t_conc',      14)
+        t_topicals  = st.session_state.get('t_topicals',  30)
+        t_oil       = st.session_state.get('t_oil',       21)
+        t_seeds     = st.session_state.get('t_seeds',     60)
+        SUBCAT_TARGET   = {}
+        CAT_SIZE_TARGET = {}
+        CAT_ADV_MODES   = {}
 
-    if _lr_mode == "Simple":
-        _lrc1, _lrc2 = st.columns(2)
-        for _lri, _lrcat in enumerate(_ALL_LRC_CATS):
-            _lrkey = f"lr_{_lrcat.replace('-','_').replace(' ','_')}"
-            _lrdef = _lr_cat_defs.get(_lrcat, 90)
-            _lrcol = _lrc1 if _lri % 2 == 0 else _lrc2
-            _lrv = _lrcol.number_input(
-                _lrcat, value=st.session_state.get(_lrkey, _lrdef),
-                min_value=0, max_value=730, step=30, key=_lrkey,
-                help="0 = include all")
-            LAST_RECEIVED_CUTOFF[_lrcat] = _lrv
-    else:  # Advanced — per-size per-category
-        for _lrcat in _ALL_LRC_CATS:
-            _lrcat_key = _lrcat.replace('-','_').replace(' ','_')
-            _cat_def   = _lr_cat_defs.get(_lrcat, 90)
-            _cat_sizes = _shared_cat_sizes.get(_lrcat, [])
-            _icon      = "🌸" if _lrcat == "Flower" else "🔹"
-            with st.expander(f"{_icon} {_lrcat}"):
-                _lrkey_cat = f"lra_{_lrcat_key}_all"
-                _lrv_cat = st.number_input(
-                    "All sizes (default)", min_value=0, max_value=730, step=30,
-                    value=st.session_state.get(_lrkey_cat, _cat_def),
-                    key=_lrkey_cat,
-                    help="Fallback for sizes not listed below. 0 = no filter.")
-                LAST_RECEIVED_CUTOFF[_lrcat] = _lrv_cat
-                if _cat_sizes:
-                    st.caption("Override per size:")
-                    _lsc1, _lsc2 = st.columns(2)
-                    for _lsi, _lsz in enumerate(_cat_sizes):
-                        _lskey = f"lra_{_lrcat_key}_{str(_lsz).replace('.','_').replace(' ','_')}"
-                        _lsv   = (_lsc1 if _lsi%2==0 else _lsc2).number_input(
-                            str(_lsz), min_value=0, max_value=730, step=30,
-                            value=st.session_state.get(_lskey, _lrv_cat),
-                            key=_lskey, help="0 = no filter for this size")
-                        LAST_RECEIVED_CUTOFF[(_lrcat, _lsz)] = _lsv
+        if _dos_mode == "Simple":
+            _dc1, _dc2 = st.columns(2)
+            t_flower_all = _ni("Flower",       "f_all",       14, _dc1)
+            t_preroll    = _ni("Pre-Roll",     "t_preroll",   14, _dc1)
+            t_edibles    = _ni("Edibles",      "t_edibles",   14, _dc1)
+            t_vapes      = _ni("Vapes",        "t_vapes",     21, _dc1)
+            t_beverages  = _ni("Beverages",    "t_beverages", 14, _dc1)
+            t_capsules   = _ni("Capsules",     "t_capsules",  21, _dc2)
+            t_conc       = _ni("Concentrates", "t_conc",      14, _dc2)
+            t_topicals   = _ni("Topicals",     "t_topicals",  30, _dc2)
+            t_oil        = _ni("Oil",          "t_oil",       21, _dc2)
+            t_seeds      = _ni("Seeds",        "t_seeds",     60, _dc2)
+            FLOWER_SIZE_TARGET = {s: t_flower_all for s in ['1g','3.5g','5g','7g','14g','28g','30g','other']}
+
+        elif _dos_mode == "Normal":
+            with st.expander("🌸 Flower (by size)", expanded=True):
+                fc1, fc2 = st.columns(2)
+                t_flower_1g    = _ni("1g",    "f1g",    7,  fc1)
+                t_flower_35g   = _ni("3.5g",  "f35g",  14,  fc1)
+                t_flower_5g    = _ni("5g",    "f5g",   14,  fc1)
+                t_flower_7g    = _ni("7g",    "f7g",   14,  fc1)
+                t_flower_14g   = _ni("14g",   "f14g",  21,  fc2)
+                t_flower_28g   = _ni("28g",   "f28g",  30,  fc2)
+                t_flower_30g   = _ni("30g",   "f30g",  30,  fc2)
+                t_flower_other = _ni("Other", "fother",14,  fc2)
+            FLOWER_SIZE_TARGET = {
+                '1g': t_flower_1g, '3.5g': t_flower_35g, '5g': t_flower_5g,
+                '7g': t_flower_7g, '14g': t_flower_14g, '28g': t_flower_28g,
+                '30g': t_flower_30g, 'other': t_flower_other,
+            }
+            _dc1, _dc2 = st.columns(2)
+            t_preroll   = _ni("Pre-Roll",     "t_preroll",   14, _dc1)
+            t_edibles   = _ni("Edibles",      "t_edibles",   14, _dc1)
+            t_vapes     = _ni("Vapes",        "t_vapes",     21, _dc1)
+            t_beverages = _ni("Beverages",    "t_beverages", 14, _dc1)
+            t_capsules  = _ni("Capsules",     "t_capsules",  21, _dc1)
+            t_conc      = _ni("Concentrates", "t_conc",      14, _dc2)
+            t_topicals  = _ni("Topicals",     "t_topicals",  30, _dc2)
+            t_oil       = _ni("Oil",          "t_oil",       21, _dc2)
+            t_seeds     = _ni("Seeds",        "t_seeds",     60, _dc2)
+
+        else:  # Advanced — per-category size vs subcat toggle
+            _sz_defaults = {_acat: dict(_CAT_SIZE_DEFS.get(_acat,[])) for _acat in _ADV_CATS}
+
+            for _acat in _ADV_CATS:
+                _akey  = f"adv_{_acat.replace('-','_').replace(' ','_')}_mode"
+                _icon  = "🌸" if _acat == "Flower" else "🔹"
+                _has_subcats = bool(_CAT_SUBCAT_DEFS.get(_acat))
+                with st.expander(f"{_icon} {_acat}"):
+                    if _has_subcats:
+                        _atog = st.radio("", ["By Size","By Subcategory"], horizontal=True,
+                                         index=["By Size","By Subcategory"].index(
+                                             st.session_state.get(_akey,"By Size")),
+                                         key=_akey, label_visibility="collapsed")
+                    else:
+                        _atog = "By Size"
+                    CAT_ADV_MODES[_acat] = _atog
+                    _ac1, _ac2 = st.columns(2)
+                    if _atog == "By Size":
+                        for _ai, _asz in enumerate(_shared_cat_sizes[_acat]):
+                            _adef = _sz_defaults[_acat].get(_asz, _ADV_DEFAULTS.get(_acat, 14))
+                            _ask  = f"sz_{_acat}_{_asz}".replace('-','_').replace(' ','_')
+                            _v    = (_ac1 if _ai%2==0 else _ac2).number_input(
+                                _asz, value=st.session_state.get(_ask, _adef),
+                                min_value=1, max_value=90, key=_ask)
+                            CAT_SIZE_TARGET[(_acat, _asz)] = _v
+                    else:
+                        _def_sc = _ADV_DEFAULTS.get(_acat, 14)
+                        for _ai, _asc in enumerate(_CAT_SUBCAT_DEFS[_acat]):
+                            _ask = f"sc_{_acat}_{_asc}".replace(' ','_').replace('-','_').replace('/','_')
+                            _v   = (_ac1 if _ai%2==0 else _ac2).number_input(
+                                _asc, value=st.session_state.get(_ask, _def_sc),
+                                min_value=1, max_value=90, key=_ask)
+                            SUBCAT_TARGET[(_acat, _asc)] = _v
+
+            if CAT_ADV_MODES.get('Flower') == 'By Size':
+                FLOWER_SIZE_TARGET = {sz: CAT_SIZE_TARGET.get(('Flower', sz), _sz_defaults['Flower'].get(sz, 14))
+                                      for sz in _shared_cat_sizes['Flower']}
+            else:
+                FLOWER_SIZE_TARGET = {'other': _ADV_DEFAULTS['Flower']}
+
+        TARGET = {
+            'Pre-Roll': t_preroll, 'Edibles': t_edibles, 'Vapes': t_vapes,
+            'Beverages': t_beverages, 'Capsules': t_capsules, 'Concentrates': t_conc,
+            'Topicals': t_topicals, 'Oil': t_oil, 'Seeds': t_seeds,
+            'Flower': st.session_state.get('f_all', 14),
+        }
+
+    with _stab3:
+        st.markdown("**🗓️ Last Received Cutoff**")
+        st.caption("Exclude SKUs not received within N days. 0 = no filter.")
+
+        _lr_mode = st.radio("Cutoff Mode", ["Simple","Advanced"],
+                            index=["Simple","Advanced"].index(st.session_state.get('lr_mode','Simple')),
+                            horizontal=True, key="lr_mode")
+
+        _lr_cat_defs = {
+            'Flower':60,'Vapes':90,'Pre-Roll':60,'Edibles':120,
+            'Concentrates':90,'Topicals':180,'Oil':180,
+            'Capsules':180,'Beverages':120,'Seeds':365,
+        }
+
+        LAST_RECEIVED_CUTOFF = {}
+
+        if _lr_mode == "Simple":
+            _lrc1, _lrc2 = st.columns(2)
+            for _lri, _lrcat in enumerate(_ALL_LRC_CATS):
+                _lrkey = f"lr_{_lrcat.replace('-','_').replace(' ','_')}"
+                _lrdef = _lr_cat_defs.get(_lrcat, 90)
+                _lrcol = _lrc1 if _lri % 2 == 0 else _lrc2
+                _lrv = _lrcol.number_input(
+                    _lrcat, value=st.session_state.get(_lrkey, _lrdef),
+                    min_value=0, max_value=730, step=30, key=_lrkey,
+                    help="0 = include all")
+                LAST_RECEIVED_CUTOFF[_lrcat] = _lrv
+        else:  # Advanced — per-size per-category
+            for _lrcat in _ALL_LRC_CATS:
+                _lrcat_key = _lrcat.replace('-','_').replace(' ','_')
+                _cat_def   = _lr_cat_defs.get(_lrcat, 90)
+                _cat_sizes = _shared_cat_sizes.get(_lrcat, [])
+                _icon      = "🌸" if _lrcat == "Flower" else "🔹"
+                with st.expander(f"{_icon} {_lrcat}"):
+                    _lrkey_cat = f"lra_{_lrcat_key}_all"
+                    _lrv_cat = st.number_input(
+                        "All sizes (default)", min_value=0, max_value=730, step=30,
+                        value=st.session_state.get(_lrkey_cat, _cat_def),
+                        key=_lrkey_cat,
+                        help="Fallback for sizes not listed below. 0 = no filter.")
+                    LAST_RECEIVED_CUTOFF[_lrcat] = _lrv_cat
+                    if _cat_sizes:
+                        st.caption("Override per size:")
+                        _lsc1, _lsc2 = st.columns(2)
+                        for _lsi, _lsz in enumerate(_cat_sizes):
+                            _lskey = f"lra_{_lrcat_key}_{str(_lsz).replace('.','_').replace(' ','_')}"
+                            _lsv   = (_lsc1 if _lsi%2==0 else _lsc2).number_input(
+                                str(_lsz), min_value=0, max_value=730, step=30,
+                                value=st.session_state.get(_lskey, _lrv_cat),
+                                key=_lskey, help="0 = no filter for this size")
+                            LAST_RECEIVED_CUTOFF[(_lrcat, _lsz)] = _lsv
 
 
 # ── main ──────────────────────────────────────────────────────
@@ -1021,132 +1170,6 @@ if not kova_file or not ocs_file:
 
 tab1, tab2, tab3 = st.tabs(["📦 Replenishment Order", "📋 Suggested Order", "🗂️ Menu Builder"])
 
-# ── shared data loading ────────────────────────────────────────
-@st.cache_data(show_spinner="Loading catalogue...")
-def load_raw(kova_bytes, ocs_bytes):
-    import re
-    kova = pd.read_excel(io.BytesIO(kova_bytes), sheet_name='Reorder')
-    ocs  = pd.read_excel(io.BytesIO(ocs_bytes),  sheet_name='MasterCatalogue')
-    kova_ocs = kova[kova['Supplier'] == 'OCS'].copy()
-    kova_ocs['Supplier Sku'] = kova_ocs['Supplier Sku'].str.strip()
-    ocs['OCS Variant Number'] = ocs['OCS Variant Number'].str.strip()
-    ocs_cols = ['OCS Variant Number','OCS Item Number','Unit Price','Pack Size','Stock Status','Plant Type']
-    for _opt in ['Sub-Category','Classification','Category','Product','Product Name','Variant Name','Brand']:
-        if _opt in ocs.columns and _opt not in ocs_cols:
-            ocs_cols.append(_opt)
-    merged = kova_ocs.merge(ocs[ocs_cols], left_on='Supplier Sku', right_on='OCS Variant Number', how='left')
-    if 'Sub-Category' not in merged.columns:
-        merged['Sub-Category'] = ''
-    else:
-        merged['Sub-Category'] = merged['Sub-Category'].fillna('')
-
-    def extract_size(sku):
-        m = re.search(r'_(\d+\.?\d*[gG])_', str(sku))
-        return m.group(1).lower() if m else None
-
-    def extract_preroll_size(sku):
-        m = re.search(r'_(\d+x\d+\.?\d*[gG])_', str(sku))
-        return m.group(1).lower() if m else None
-
-    def extract_product_size(sku):
-        s = str(sku)
-        if '___' in s:
-            before = s.split('___')[0]
-            idx = before.find('_')
-            if idx >= 0:
-                val = before[idx+1:]
-                return val if val else None
-        return None
-
-    def map_strain(row):
-        pt = str(row.get('Plant Type', '') or '').lower()
-        if 'indica' in pt:  return 'Indica'
-        if 'sativa' in pt:  return 'Sativa'
-        if 'hybrid' in pt:  return 'Hybrid'
-        if 'blend'  in pt:  return 'Blend'
-        name = str(row.get('Product', '') or '').lower()
-        for token in ['- indica', 'indica -', '(indica)']:
-            if token in name: return 'Indica'
-        for token in ['- sativa', 'sativa -', '(sativa)']:
-            if token in name: return 'Sativa'
-        for token in ['- hybrid', 'hybrid -', '(hybrid)']:
-            if token in name: return 'Hybrid'
-        for token in ['- blend', 'blend -', '(blend)']:
-            if token in name: return 'Blend'
-        return 'Unknown'
-
-    # Detect last-received date column (Cova exports use various names)
-    _lr_candidates = ['Last Received Date','Date Last Received','Last Receipt Date',
-                      'Last Purchase Date','Last PO Date','Last Order Date','Last Ordered Date']
-    _lr_col = next((c for c in _lr_candidates if c in merged.columns), None)
-    if _lr_col:
-        merged['Last Received Date'] = pd.to_datetime(merged[_lr_col], errors='coerce')
-    else:
-        merged['Last Received Date'] = pd.NaT
-
-    merged['Flower Size']   = merged.apply(
-        lambda r: extract_size(r['Supplier Sku']) if r['Classification'] == 'Flower' else None, axis=1)
-    merged['Pre-Roll Size'] = merged.apply(
-        lambda r: extract_preroll_size(r['Supplier Sku']) if r['Classification'] == 'Pre-Roll' else None, axis=1)
-    merged['Product Size']  = merged['Supplier Sku'].apply(extract_product_size)
-    merged['Strain'] = merged.apply(map_strain, axis=1)
-    merged['Pack Size']  = pd.to_numeric(merged['Pack Size'],  errors='coerce').fillna(1).astype(int)
-    merged['Unit Price'] = pd.to_numeric(merged['Unit Price'], errors='coerce')
-
-    # Enrich full OCS catalogue so Menu Builder can suggest SKUs never in Kova
-    ocs['Product Size'] = ocs['OCS Variant Number'].apply(extract_product_size)
-    ocs['Strain']       = ocs.apply(lambda r: map_strain({
-        'Plant Type': r.get('Plant Type', ''),
-        'Product': r.get('Product', r.get('Product Name', r.get('Variant Name', ''))),
-    }), axis=1)
-    ocs['Pack Size']    = pd.to_numeric(ocs['Pack Size'],  errors='coerce').fillna(1).astype(int)
-    ocs['Unit Price']   = pd.to_numeric(ocs['Unit Price'], errors='coerce')
-    # Normalise Classification: OCS may call it 'Category'
-    if 'Classification' not in ocs.columns and 'Category' in ocs.columns:
-        ocs['Classification'] = ocs['Category']
-
-    # If still no Classification, derive from Sub-Category (always present in OCS exports)
-    if 'Classification' not in ocs.columns and 'Sub-Category' in ocs.columns:
-        _SC_TO_CLASS = {
-            # Flower
-            'Whole Flower':'Flower','Milled Flower':'Flower',
-            'Hash and Kief':'Flower','Variety Packs':'Flower',
-            # Pre-Roll
-            'Singles':'Pre-Roll','Multipacks':'Pre-Roll',
-            # Vapes
-            '510 Thread Cartridges':'Vapes','Closed Loop Pods':'Vapes',
-            'Disposable Pens':'Vapes',
-            # Edibles
-            'Soft Chews':'Edibles','Hard Chews':'Edibles','Chocolates':'Edibles',
-            'Baked Goods':'Edibles','Confections':'Edibles','Gummies':'Edibles',
-            'Candy':'Edibles','Lozenges':'Edibles','Mints':'Edibles',
-            # Beverages
-            'Beverages':'Beverages','Drinks':'Beverages','Teas':'Beverages',
-            # Concentrates
-            'Shatter':'Concentrates','Resin':'Concentrates','Rosin':'Concentrates',
-            'Wax':'Concentrates','Distillate':'Concentrates','Diamonds':'Concentrates',
-            'Hash':'Concentrates','Kief':'Concentrates','Budder':'Concentrates',
-            # Topicals
-            'Creams And Lotions':'Topicals','Body Care':'Topicals',
-            'Face Care':'Topicals','Patches':'Topicals',
-            'Lip Care':'Topicals','Bath':'Topicals',
-            # Oil / Capsules / Seeds
-            'Oil':'Oil','Sublingual Oil':'Oil','Oils':'Oil',
-            'Capsules':'Capsules','Soft-Gel Capsules':'Capsules','Gel Capsules':'Capsules',
-            'Seeds':'Seeds','Seed Packs':'Seeds',
-        }
-        ocs['Classification'] = ocs['Sub-Category'].map(_SC_TO_CLASS)
-
-    # Normalise product name
-    if 'Product' not in ocs.columns:
-        for _pn in ['Product Name', 'Variant Name']:
-            if _pn in ocs.columns:
-                ocs['Product'] = ocs[_pn]
-                break
-    if 'Product' not in ocs.columns:
-        ocs['Product'] = ocs['OCS Variant Number']
-
-    return merged, ocs
 
 kova_bytes_raw = kova_file.getvalue()
 ocs_bytes_raw  = ocs_file.getvalue()
@@ -1200,7 +1223,7 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
             else:
                 tgt = flower_size_target.get(row['Flower Size'], flower_size_target.get('other', 14))
         elif _adv_m == 'By Size':
-            raw_sz = str(row.get('Product Size', '') or '').strip().lower().replace(' ', '')
+            raw_sz = str(row.get('Product Size', '') or '').strip()
             tgt = (cat_size_target or {}).get((cat, raw_sz), target.get(cat, 14))
         elif _adv_m == 'By Subcategory':
             tgt = (subcat_target or {}).get((cat, _sc), target.get(cat, 14))
@@ -1475,28 +1498,62 @@ with tab1:
 
     st.markdown("---")
 
-    # ── category summary ──────────────────────────────────────
-    col_left, col_right = st.columns([1, 2])
+    # ── budget breakdown chart ────────────────────────────────
+    import plotly.graph_objects as go
 
-    with col_left:
-        st.markdown("**By Category**")
-        cat_sum = order_df.groupby('Classification').agg(
-            SKUs=('SKU','count'),
-            Cost=('Est Cost','sum')
-        ).sort_values('Cost', ascending=False).reset_index()
-        cat_sum['Cost'] = cat_sum['Cost'].map('${:,.2f}'.format)
-        st.dataframe(cat_sum, hide_index=True, use_container_width=True)
+    _cat_costs = order_df.groupby('Classification')['Est Cost'].sum().sort_values(ascending=False)
+    _tier_costs = order_df.groupby('Tier')['Est Cost'].sum()
 
-    with col_right:
-        st.markdown("**By Velocity Tier**")
-        tier_labels = {'A':'A — Fast (5+/wk)','B':'B — Mid (2–4/wk)','C':'C — Slow (~1/wk)','D':'D — Very Slow (<1/wk)'}
-        tier_sum = order_df.groupby('Tier').agg(
-            SKUs=('SKU','count'),
-            Cost=('Est Cost','sum')
-        ).reset_index()
-        tier_sum['Tier'] = tier_sum['Tier'].map(tier_labels)
-        tier_sum['Cost'] = tier_sum['Cost'].map('${:,.2f}'.format)
-        st.dataframe(tier_sum, hide_index=True, use_container_width=True)
+    _CAT_COLORS = {
+        'Flower':'#89d4f5','Pre-Roll':'#b8e0ff','Vapes':'#7ec8e3',
+        'Edibles':'#f5c842','Concentrates':'#e07b39','Beverages':'#6dd6a0',
+        'Capsules':'#b89ef5','Oil':'#f5a0c8','Topicals':'#8fd48f','Seeds':'#d4c089',
+    }
+    _TIER_COLORS = {'A':'#4caf80','B':'#8bc34a','C':'#ffc107','D':'#ef5350'}
+
+    _chart_col1, _chart_col2 = st.columns([3, 2])
+
+    with _chart_col1:
+        _fig_cat = go.Figure(go.Bar(
+            x=_cat_costs.values,
+            y=_cat_costs.index,
+            orientation='h',
+            marker_color=[_CAT_COLORS.get(c,'#89d4f5') for c in _cat_costs.index],
+            text=[f"${v:,.0f}" for v in _cat_costs.values],
+            textposition='outside',
+            hovertemplate='%{y}: $%{x:,.2f}<extra></extra>',
+        ))
+        _fig_cat.update_layout(
+            title=dict(text="Budget by Category", font=dict(size=13, color='#e8e8f0')),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#e8e8f0', size=11),
+            xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+            yaxis=dict(autorange='reversed', tickfont=dict(size=11)),
+            margin=dict(l=10, r=60, t=36, b=10),
+            height=max(200, len(_cat_costs) * 32 + 60),
+        )
+        st.plotly_chart(_fig_cat, use_container_width=True, config={'displayModeBar': False})
+
+    with _chart_col2:
+        _tier_label_map = {'A':'A — Fast','B':'B — Mid','C':'C — Slow','D':'D — Very Slow'}
+        _fig_tier = go.Figure(go.Pie(
+            labels=[_tier_label_map.get(t, t) for t in _tier_costs.index],
+            values=_tier_costs.values,
+            marker_colors=[_TIER_COLORS.get(t,'#aaa') for t in _tier_costs.index],
+            hole=0.55,
+            textinfo='label+percent',
+            hovertemplate='%{label}: $%{value:,.2f}<extra></extra>',
+            textfont=dict(size=11),
+        ))
+        _fig_tier.update_layout(
+            title=dict(text="Budget by Tier", font=dict(size=13, color='#e8e8f0')),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#e8e8f0'),
+            showlegend=False,
+            margin=dict(l=10, r=10, t=36, b=10),
+            height=max(200, len(_cat_costs) * 32 + 60),
+        )
+        st.plotly_chart(_fig_tier, use_container_width=True, config={'displayModeBar': False})
 
     st.markdown("---")
 
@@ -1524,19 +1581,39 @@ with tab1:
         fa4.metric("Shipping",  f"${shipping_cost:,}" if shipping_cost > 0 else "—")
         fa5.metric("Grand Total", f"${f_grand:,.2f}")
 
-        display_cols = {
-            'Classification':'Category','Product':'Product','Tier':'Tier',
-            'Days Left':'Days Left','In Stock Qty':'In Stock','On Order':'On Order',
-            'Sales (7 Days)':'7d Sales','Sales (30 Days)':'30d Sales',
-            'Weekly Vel':'Wkly Vel','Cases':'Cases','Suggest':'Units',
-            'Unit Price':'Unit Price','Est Cost':'Est Cost','Supplier Sku':'OCS Variant #'
-        }
-        show = filtered_df[[c for c in display_cols.keys() if c in filtered_df.columns]].rename(columns=display_cols)
-        show['Unit Price'] = show['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
-        show['Est Cost']   = show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
-        show['Days Left']  = show['Days Left'].round(1)
-        st.dataframe(show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left']),
-                     hide_index=True, use_container_width=True, height=500)
+        _edit_df = filtered_df[['Classification','Product','Tier','Days Left',
+                                 'In Stock Qty','On Order','Sales (7 Days)','Sales (30 Days)',
+                                 'Weekly Vel','Cases','Suggest','Unit Price','Est Cost',
+                                 'Pack Size','Supplier Sku']].copy()
+        _edit_df['Days Left'] = _edit_df['Days Left'].round(1)
+        _edited = st.data_editor(
+            _edit_df,
+            hide_index=True,
+            use_container_width=True,
+            height=500,
+            column_config={
+                'Classification': st.column_config.TextColumn('Category',    disabled=True),
+                'Product':        st.column_config.TextColumn('Product',     disabled=True, width='large'),
+                'Tier':           st.column_config.TextColumn('Tier',        disabled=True, width='small'),
+                'Days Left':      st.column_config.NumberColumn('Days Left', disabled=True, format='%.1f'),
+                'In Stock Qty':   st.column_config.NumberColumn('In Stock',  disabled=True),
+                'On Order':       st.column_config.NumberColumn('On Order',  disabled=True),
+                'Sales (7 Days)': st.column_config.NumberColumn('7d Sales',  disabled=True),
+                'Sales (30 Days)':st.column_config.NumberColumn('30d Sales', disabled=True),
+                'Weekly Vel':     st.column_config.NumberColumn('Wkly Vel',  disabled=True, format='%.2f'),
+                'Cases':          st.column_config.NumberColumn('Cases ✏️',  disabled=False, min_value=0, step=1),
+                'Suggest':        st.column_config.NumberColumn('Units',     disabled=True),
+                'Unit Price':     st.column_config.NumberColumn('Unit Price',disabled=True, format='$%.2f'),
+                'Est Cost':       st.column_config.NumberColumn('Est Cost',  disabled=True, format='$%.2f'),
+                'Pack Size':      st.column_config.NumberColumn('Pack Size', disabled=True),
+                'Supplier Sku':   st.column_config.TextColumn('OCS Variant #', disabled=True),
+            },
+            key="order_editor",
+        )
+        # Recalculate Units and Est Cost from any edited Cases
+        _edited['Suggest']  = (_edited['Cases'] * _edited['Pack Size']).astype(int)
+        _edited['Est Cost'] = (_edited['Suggest'] * _edited['Unit Price'].fillna(0)).round(2)
+        filtered_df = _edited  # downstream downloads use the edited version
 
     if not deferred_df.empty:
         with st.expander(f"📋 Deferred to Next Order ({len(deferred_df)} SKUs — ${deferred_df['Est Cost'].sum():,.2f} pre-tax)"):
