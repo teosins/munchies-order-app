@@ -205,9 +205,17 @@ with st.sidebar:
         st.caption(f"Tax rate: {tax_rate*100:.3g}%")
 
     budget = st.number_input("Weekly Budget (tax-in)", value=30000, step=500, format="%d")
-    budget_pretax = round(budget / (1 + tax_rate), 2)
-    tax_amount = budget - budget_pretax
-    st.caption(f"Pre-tax: ${budget_pretax:,.2f}  |  Tax ({tax_rate*100:.3g}%): ${tax_amount:,.2f}")
+
+    st.markdown("**Shipping**")
+    shipping_cost = st.number_input("Shipping Cost ($)", value=0, min_value=0, step=5, format="%d")
+    ship_in_budget = st.checkbox("Deduct shipping from order budget", value=False,
+                                  help="When checked, shipping is subtracted before calculating how much product you can order.")
+
+    effective_budget = budget - shipping_cost if ship_in_budget else budget
+    budget_pretax    = round(effective_budget / (1 + tax_rate), 2)
+    tax_amount       = effective_budget - budget_pretax
+    st.caption(f"Pre-tax: ${budget_pretax:,.2f}  |  Tax ({tax_rate*100:.3g}%): ${tax_amount:,.2f}"
+               + (f"  |  Shipping deducted: ${shipping_cost:,}" if ship_in_budget and shipping_cost > 0 else ""))
 
     st.markdown("**Target Days of Supply**")
 
@@ -593,17 +601,19 @@ def build_upload(order_df):
 with tab1:
     pretax_total      = order_df['Est Cost'].sum()
     tax_amount_actual = pretax_total * tax_rate
-    total             = pretax_total + tax_amount_actual
+    subtotal_taxin    = pretax_total + tax_amount_actual
+    grand_total       = subtotal_taxin + (shipping_cost if not ship_in_budget else 0)
     tax_label         = f"Tax ({tax_rate*100:.3g}%)"
 
     # ── summary metrics ───────────────────────────────────────
     st.markdown("### This Week's Order")
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("SKUs to Order",  len(order_df))
-    m2.metric("Pre-Tax Total",  f"${pretax_total:,.2f}")
-    m3.metric(tax_label,        f"${tax_amount_actual:,.2f}")
-    m4.metric("Total (Tax-In)", f"${total:,.2f}")
-    m5.metric("Deferred SKUs",  len(deferred_df))
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("SKUs to Order",   len(order_df))
+    m2.metric("Pre-Tax Total",   f"${pretax_total:,.2f}")
+    m3.metric(tax_label,         f"${tax_amount_actual:,.2f}")
+    m4.metric("Subtotal (Tax-In)", f"${subtotal_taxin:,.2f}")
+    m5.metric("Shipping",        f"${shipping_cost:,}" if shipping_cost > 0 else "—")
+    m6.metric("Grand Total",     f"${grand_total:,.2f}")
 
     st.markdown("---")
 
@@ -646,12 +656,15 @@ with tab1:
     if filtered_df.empty:
         st.info("No items match the selected tiers.")
     else:
-        f_pretax = filtered_df['Est Cost'].sum()
-        fa1, fa2, fa3, fa4 = st.columns(4)
+        f_pretax    = filtered_df['Est Cost'].sum()
+        f_taxin     = f_pretax * (1 + tax_rate)
+        f_grand     = f_taxin + (shipping_cost if not ship_in_budget else 0)
+        fa1, fa2, fa3, fa4, fa5 = st.columns(5)
         fa1.metric("SKUs (filtered)", len(filtered_df))
-        fa2.metric("Pre-Tax",  f"${f_pretax:,.2f}")
-        fa3.metric(tax_label,  f"${f_pretax * tax_rate:,.2f}")
-        fa4.metric("Tax-In",   f"${f_pretax * (1 + tax_rate):,.2f}")
+        fa2.metric("Pre-Tax",   f"${f_pretax:,.2f}")
+        fa3.metric(tax_label,   f"${f_pretax * tax_rate:,.2f}")
+        fa4.metric("Shipping",  f"${shipping_cost:,}" if shipping_cost > 0 else "—")
+        fa5.metric("Grand Total", f"${f_grand:,.2f}")
 
         display_cols = {
             'Classification':'Category','Product':'Product','Tier':'Tier',
@@ -724,13 +737,15 @@ with tab2:
 
         uc_pretax = uc_filtered['Est Cost'].sum()
         uc_tax    = uc_pretax * tax_rate
-        uc_total  = uc_pretax + uc_tax
+        uc_taxin  = uc_pretax + uc_tax
+        uc_grand  = uc_taxin + (shipping_cost if not ship_in_budget else 0)
 
-        uc1, uc2, uc3, uc4 = st.columns(4)
+        uc1, uc2, uc3, uc4, uc5 = st.columns(5)
         uc1.metric("SKUs to Order",   len(uc_filtered))
         uc2.metric("Pre-Tax Total",   f"${uc_pretax:,.2f}")
         uc3.metric(f"Tax ({tax_rate*100:.3g}%)", f"${uc_tax:,.2f}")
-        uc4.metric("Total (Tax-In)",  f"${uc_total:,.2f}")
+        uc4.metric("Shipping",        f"${shipping_cost:,}" if shipping_cost > 0 else "—")
+        uc5.metric("Grand Total",     f"${uc_grand:,.2f}")
 
         st.markdown("---")
 
