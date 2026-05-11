@@ -281,8 +281,39 @@ elif _qp.get('checkout') == 'cancelled':
     st.warning("Checkout cancelled — you can subscribe anytime from this page.")
 
 # ── subscription gate ─────────────────────────────────────────
-_sub      = _check_sub(st.session_state.sb_user.id)
+def _sync_from_stripe(user_id):
+    """Check Stripe directly and sync to Supabase if active subscription found."""
+    try:
+        res = _sb.table('user_subscriptions').select('stripe_customer_id').eq('user_id', user_id).execute()
+        if not res.data or not res.data[0].get('stripe_customer_id'):
+            return False
+        cid  = res.data[0]['stripe_customer_id']
+        subs = _stripe.Subscription.list(customer=cid, limit=1)
+        if subs.data:
+            sub  = subs.data[0]
+            plan = 'yearly' if sub['items']['data'][0]['price']['id'] == _PRICE_YEARLY else 'monthly'
+            _sb.table('user_subscriptions').upsert({
+                'user_id': user_id,
+                'stripe_customer_id': cid,
+                'stripe_subscription_id': sub['id'],
+                'status': sub['status'],
+                'plan': plan,
+                'trial_end': _dt.utcfromtimestamp(sub['trial_end']).isoformat() if sub.get('trial_end') else None,
+                'current_period_end': _dt.utcfromtimestamp(sub['current_period_end']).isoformat(),
+            }).execute()
+            return sub['status'] in ('active', 'trialing')
+    except Exception:
+        pass
+    return False
+
+_sub       = _check_sub(st.session_state.sb_user.id)
 _is_active = _sub and _sub.get('status') in ('active', 'trialing')
+
+# If not active in Supabase, check Stripe directly (catches post-payment returns)
+if not _is_active:
+    _is_active = _sync_from_stripe(st.session_state.sb_user.id)
+    if _is_active:
+        st.rerun()
 
 if not _is_active:
     st.markdown("""
@@ -351,6 +382,15 @@ if not _is_active:
                            use_container_width=True)
 
         st.markdown("<p style='text-align:center;color:#555;font-size:0.78rem;margin-top:16px'>Cancel anytime · Secure payments via Stripe · Have a referral code? Enter it at checkout.</p>", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        if st.button("✅ I've completed payment — click to activate", use_container_width=True):
+            for _k in ('checkout_url_monthly','checkout_url_yearly'):
+                st.session_state.pop(_k, None)
+            if _sync_from_stripe(st.session_state.sb_user.id):
+                st.rerun()
+            else:
+                st.warning("Payment not found yet — wait a moment and try again.")
 
         st.markdown("---")
         if st.button("Sign Out", use_container_width=True):
