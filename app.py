@@ -488,16 +488,17 @@ _SUBCAT_DEFS = [
 ]
 
 def _build_settings_from_state(prof_name):
-    """Build a settings dict from current session_state widget keys."""
     _prov = st.session_state.get('s_province', 'Ontario')
     _prov_rate = PROVINCE_RATES.get(_prov)
     return {
         'name': prof_name,
+        'dos_mode': st.session_state.get('dos_mode', 'Normal'),
         'province': _prov,
         'custom_tax_rate': st.session_state.get('s_custom_tax', 13.0) if _prov_rate is None else None,
         'budget': int(st.session_state.get('s_budget', 30000)),
         'shipping_cost': int(st.session_state.get('s_shipping', 0)),
         'ship_in_budget': bool(st.session_state.get('s_ship_in_budget', False)),
+        'flower_simple': int(st.session_state.get('f_all', 14)),
         'flower_targets': {
             '1g': int(st.session_state.get('f1g', 7)),
             '3.5g': int(st.session_state.get('f35g', 14)),
@@ -639,6 +640,10 @@ with st.sidebar:
         st.session_state['s_shipping']       = int(p.get('shipping_cost', 0))
         st.session_state['s_ship_in_budget'] = bool(p.get('ship_in_budget', False))
         st.session_state['prof_name']        = p.get('name', 'My Store')
+        if p.get('dos_mode') in ('Simple','Normal','Advanced'):
+            st.session_state['dos_mode'] = p['dos_mode']
+        if p.get('flower_simple') is not None:
+            st.session_state['f_all'] = int(p['flower_simple'])
         _ft = p.get('flower_targets', {})
         for _k, _sk in [('1g','f1g'),('3.5g','f35g'),('5g','f5g'),('7g','f7g'),
                          ('14g','f14g'),('28g','f28g'),('30g','f30g'),('other','fother')]:
@@ -715,55 +720,75 @@ with st.sidebar:
                + (f"  |  Shipping deducted: ${shipping_cost:,}" if ship_in_budget and shipping_cost > 0 else ""))
 
     st.markdown("**Target Days of Supply**")
+    _dos_mode = st.radio("Mode", ["Simple", "Normal", "Advanced"],
+                         index=["Simple","Normal","Advanced"].index(st.session_state.get('dos_mode','Normal')),
+                         horizontal=True, key="dos_mode")
 
-    with st.expander("🌸 Flower (by size)", expanded=True):
-        fc1, fc2 = st.columns(2)
-        with fc1:
-            t_flower_1g   = st.number_input("1g",   value=7,  min_value=1, max_value=90, key="f1g")
-            t_flower_35g  = st.number_input("3.5g", value=14, min_value=1, max_value=90, key="f35g")
-            t_flower_5g   = st.number_input("5g",   value=14, min_value=1, max_value=90, key="f5g")
-            t_flower_7g   = st.number_input("7g",   value=14, min_value=1, max_value=90, key="f7g")
-        with fc2:
-            t_flower_14g  = st.number_input("14g",  value=21, min_value=1, max_value=90, key="f14g")
-            t_flower_28g  = st.number_input("28g",  value=30, min_value=1, max_value=90, key="f28g")
-            t_flower_30g  = st.number_input("30g",  value=30, min_value=1, max_value=90, key="f30g")
-            t_flower_other= st.number_input("Other", value=14, min_value=1, max_value=90, key="fother")
+    def _ni(label, default_key, default_val, col=None):
+        _w = col if col else st
+        return _w.number_input(label, value=st.session_state.get(default_key, default_val),
+                               min_value=1, max_value=90, key=default_key)
 
-    FLOWER_SIZE_TARGET = {
-        '1g': t_flower_1g, '3.5g': t_flower_35g, '5g': t_flower_5g,
-        '7g': t_flower_7g, '14g': t_flower_14g,  '28g': t_flower_28g,
-        '30g': t_flower_30g,
-    }
+    # ── always render Flower ───────────────────────────────────
+    if _dos_mode == "Simple":
+        _dc1, _dc2 = st.columns(2)
+        t_flower_all  = _ni("Flower",      "f_all",  14, _dc1)
+        t_preroll     = _ni("Pre-Roll",    "t_preroll", 14, _dc1)
+        t_edibles     = _ni("Edibles",     "t_edibles", 14, _dc1)
+        t_vapes       = _ni("Vapes",       "t_vapes",   21, _dc1)
+        t_beverages   = _ni("Beverages",   "t_beverages",14,_dc1)
+        t_capsules    = _ni("Capsules",    "t_capsules", 21, _dc2)
+        t_conc        = _ni("Concentrates","t_conc",     14, _dc2)
+        t_topicals    = _ni("Topicals",    "t_topicals", 30, _dc2)
+        t_oil         = _ni("Oil",         "t_oil",      21, _dc2)
+        t_seeds       = _ni("Seeds",       "t_seeds",    60, _dc2)
+        _fv = t_flower_all
+        FLOWER_SIZE_TARGET = {s: _fv for s in ['1g','3.5g','5g','7g','14g','28g','30g','other']}
+        SUBCAT_TARGET = {}
+    else:
+        with st.expander("🌸 Flower (by size)", expanded=(_dos_mode=="Normal")):
+            fc1, fc2 = st.columns(2)
+            t_flower_1g   = _ni("1g",    "f1g",    7,  fc1)
+            t_flower_35g  = _ni("3.5g",  "f35g",  14,  fc1)
+            t_flower_5g   = _ni("5g",    "f5g",   14,  fc1)
+            t_flower_7g   = _ni("7g",    "f7g",   14,  fc1)
+            t_flower_14g  = _ni("14g",   "f14g",  21,  fc2)
+            t_flower_28g  = _ni("28g",   "f28g",  30,  fc2)
+            t_flower_30g  = _ni("30g",   "f30g",  30,  fc2)
+            t_flower_other= _ni("Other", "fother",14,  fc2)
+        FLOWER_SIZE_TARGET = {
+            '1g': t_flower_1g, '3.5g': t_flower_35g, '5g': t_flower_5g,
+            '7g': t_flower_7g, '14g': t_flower_14g, '28g': t_flower_28g,
+            '30g': t_flower_30g, 'other': t_flower_other,
+        }
+        _dc1, _dc2 = st.columns(2)
+        t_preroll   = _ni("Pre-Roll",     "t_preroll",   14, _dc1)
+        t_edibles   = _ni("Edibles",      "t_edibles",   14, _dc1)
+        t_vapes     = _ni("Vapes",        "t_vapes",     21, _dc1)
+        t_beverages = _ni("Beverages",    "t_beverages", 14, _dc1)
+        t_capsules  = _ni("Capsules",     "t_capsules",  21, _dc1)
+        t_conc      = _ni("Concentrates", "t_conc",      14, _dc2)
+        t_topicals  = _ni("Topicals",     "t_topicals",  30, _dc2)
+        t_oil       = _ni("Oil",          "t_oil",       21, _dc2)
+        t_seeds     = _ni("Seeds",        "t_seeds",     60, _dc2)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        t_preroll   = st.number_input("Pre-Roll",     value=14, min_value=1, max_value=90, key="t_preroll")
-        t_edibles   = st.number_input("Edibles",      value=14, min_value=1, max_value=90, key="t_edibles")
-        t_vapes     = st.number_input("Vapes",        value=21, min_value=1, max_value=90, key="t_vapes")
-        t_beverages = st.number_input("Beverages",    value=14, min_value=1, max_value=90, key="t_beverages")
-        t_capsules  = st.number_input("Capsules",     value=21, min_value=1, max_value=90, key="t_capsules")
-    with col2:
-        t_conc      = st.number_input("Concentrates", value=14, min_value=1, max_value=90, key="t_conc")
-        t_topicals  = st.number_input("Topicals",     value=30, min_value=1, max_value=90, key="t_topicals")
-        t_oil       = st.number_input("Oil",          value=21, min_value=1, max_value=90, key="t_oil")
-        t_seeds     = st.number_input("Seeds",        value=60, min_value=1, max_value=90, key="t_seeds")
+        SUBCAT_TARGET = {}
+        if _dos_mode == "Advanced":
+            for _scat, _scs, _sdef in _SUBCAT_DEFS:
+                with st.expander(f"🔹 {_scat} (by sub-category)"):
+                    _sc1, _sc2 = st.columns(2)
+                    for _si, _sc in enumerate(_scs):
+                        _sk = f"sc_{_scat}_{_sc}".replace(' ','_').replace('-','_').replace('/','_')
+                        SUBCAT_TARGET[(_scat, _sc)] = (_sc1 if _si%2==0 else _sc2).number_input(
+                            _sc, value=st.session_state.get(_sk, _sdef),
+                            min_value=1, max_value=90, key=_sk)
 
     TARGET = {
         'Pre-Roll': t_preroll, 'Edibles': t_edibles, 'Vapes': t_vapes,
         'Beverages': t_beverages, 'Capsules': t_capsules, 'Concentrates': t_conc,
         'Topicals': t_topicals, 'Oil': t_oil, 'Seeds': t_seeds,
+        'Flower': st.session_state.get('f_all', 14),
     }
-
-    # ── sub-category targets ───────────────────────────────────
-    SUBCAT_TARGET = {}
-    for _scat, _scs, _sdef in _SUBCAT_DEFS:
-        with st.expander(f"🔹 {_scat} (by sub-category)"):
-            _sc1, _sc2 = st.columns(2)
-            for _si, _sc in enumerate(_scs):
-                _sk = f"sc_{_scat}_{_sc}".replace(' ','_').replace('-','_').replace('/','_')
-                SUBCAT_TARGET[(_scat, _sc)] = (_sc1 if _si % 2 == 0 else _sc2).number_input(
-                    _sc, value=st.session_state.get(_sk, _sdef),
-                    min_value=1, max_value=90, key=_sk)
 
 
 # ── main ──────────────────────────────────────────────────────
