@@ -831,6 +831,25 @@ with st.sidebar:
         t_seeds     = _ni("Seeds",        "t_seeds",     60, _dc2)
 
     else:  # Advanced — per-category size vs subcat toggle
+        # Derive available sizes from actual data (cached load_raw)
+        if kova_file and ocs_file:
+            _adv_raw = load_raw(kova_file.getvalue(), ocs_file.getvalue())[0]
+            _adv_cat_sizes = {}
+            for _acat in _ADV_CATS:
+                _sz_col = 'Flower Size' if _acat == 'Flower' else 'Product Size'
+                _raw_szs = [s for s in _adv_raw[_adv_raw['Classification']==_acat][_sz_col].dropna().unique().tolist() if s]
+                # Sort: numeric-first (e.g. 0.5g < 1g), then alphabetic
+                def _sz_key(s):
+                    import re as _re
+                    m = _re.match(r'(\d+\.?\d*)', str(s))
+                    return (float(m.group(1)) if m else 999, str(s))
+                _adv_cat_sizes[_acat] = sorted(_raw_szs, key=_sz_key) or [sz for sz,_ in _CAT_SIZE_DEFS.get(_acat,[])]
+        else:
+            _adv_cat_sizes = {_acat: [sz for sz,_ in _CAT_SIZE_DEFS.get(_acat,[])] for _acat in _ADV_CATS}
+
+        # Lookup dict for default days per size
+        _sz_defaults = {_acat: dict(_CAT_SIZE_DEFS.get(_acat,[])) for _acat in _ADV_CATS}
+
         for _acat in _ADV_CATS:
             _akey  = f"adv_{_acat.replace('-','_').replace(' ','_')}_mode"
             _icon  = "🌸" if _acat == "Flower" else "🔹"
@@ -842,9 +861,10 @@ with st.sidebar:
                 CAT_ADV_MODES[_acat] = _atog
                 _ac1, _ac2 = st.columns(2)
                 if _atog == "By Size":
-                    for _ai, (_asz, _adef) in enumerate(_CAT_SIZE_DEFS[_acat]):
-                        _ask = f"sz_{_acat}_{_asz}".replace('-','_').replace(' ','_')
-                        _v   = (_ac1 if _ai%2==0 else _ac2).number_input(
+                    for _ai, _asz in enumerate(_adv_cat_sizes[_acat]):
+                        _adef = _sz_defaults[_acat].get(_asz, _ADV_DEFAULTS.get(_acat, 14))
+                        _ask  = f"sz_{_acat}_{_asz}".replace('-','_').replace(' ','_')
+                        _v    = (_ac1 if _ai%2==0 else _ac2).number_input(
                             _asz, value=st.session_state.get(_ask, _adef),
                             min_value=1, max_value=90, key=_ask)
                         CAT_SIZE_TARGET[(_acat, _asz)] = _v
@@ -859,8 +879,8 @@ with st.sidebar:
 
         # Build FLOWER_SIZE_TARGET from CAT_SIZE_TARGET when Flower is By Size
         if CAT_ADV_MODES.get('Flower') == 'By Size':
-            FLOWER_SIZE_TARGET = {sz: CAT_SIZE_TARGET.get(('Flower', sz), d)
-                                  for sz, d in _CAT_SIZE_DEFS['Flower']}
+            FLOWER_SIZE_TARGET = {sz: CAT_SIZE_TARGET.get(('Flower', sz), _sz_defaults['Flower'].get(sz, 14))
+                                  for sz in _adv_cat_sizes['Flower']}
         else:
             FLOWER_SIZE_TARGET = {'other': _ADV_DEFAULTS['Flower']}
 
@@ -877,6 +897,32 @@ with st.sidebar:
         'Topicals': t_topicals, 'Oil': t_oil, 'Seeds': t_seeds,
         'Flower': st.session_state.get('f_all', 14),
     }
+
+    # ── Last Received Date cutoff ─────────────────────────────
+    st.markdown("---")
+    st.markdown("**🗓️ Last Received Cutoff**")
+    st.caption("Hide SKUs not received within N days. 0 = no filter.")
+    _lr_cats = [
+        ('Flower',       'lr_Flower',       60),
+        ('Vapes',        'lr_Vapes',        90),
+        ('Pre-Roll',     'lr_PreRoll',      60),
+        ('Edibles',      'lr_Edibles',      120),
+        ('Concentrates', 'lr_Concentrates', 90),
+        ('Topicals',     'lr_Topicals',     180),
+        ('Oil',          'lr_Oil',          180),
+        ('Capsules',     'lr_Capsules',     180),
+        ('Beverages',    'lr_Beverages',    120),
+        ('Seeds',        'lr_Seeds',        365),
+    ]
+    _lrc1, _lrc2 = st.columns(2)
+    LAST_RECEIVED_CUTOFF = {}
+    for _lri, (_lrcat, _lrkey, _lrdef) in enumerate(_lr_cats):
+        _lrcol = _lrc1 if _lri % 2 == 0 else _lrc2
+        _lrv = _lrcol.number_input(
+            _lrcat, value=st.session_state.get(_lrkey, _lrdef),
+            min_value=0, max_value=730, step=30, key=_lrkey,
+            help="Days since last received. 0 = include all.")
+        LAST_RECEIVED_CUTOFF[_lrcat] = _lrv
 
 
 # ── main ──────────────────────────────────────────────────────
@@ -957,6 +1003,15 @@ def load_raw(kova_bytes, ocs_bytes):
             if token in name: return 'Blend'
         return 'Unknown'
 
+    # Detect last-received date column (Cova exports use various names)
+    _lr_candidates = ['Last Received Date','Date Last Received','Last Receipt Date',
+                      'Last Purchase Date','Last PO Date','Last Order Date','Last Ordered Date']
+    _lr_col = next((c for c in _lr_candidates if c in merged.columns), None)
+    if _lr_col:
+        merged['Last Received Date'] = pd.to_datetime(merged[_lr_col], errors='coerce')
+    else:
+        merged['Last Received Date'] = pd.NaT
+
     merged['Flower Size']   = merged.apply(
         lambda r: extract_size(r['Supplier Sku']) if r['Classification'] == 'Flower' else None, axis=1)
     merged['Pre-Roll Size'] = merged.apply(
@@ -988,16 +1043,29 @@ def load_raw(kova_bytes, ocs_bytes):
 
     return merged, ocs
 
-kova_bytes_raw = kova_file.read()
-ocs_bytes_raw  = ocs_file.read()
+kova_bytes_raw = kova_file.getvalue()
+ocs_bytes_raw  = ocs_file.getvalue()
 merged_raw, ocs_df = load_raw(kova_bytes_raw, ocs_bytes_raw)
 
 # ── process data ──────────────────────────────────────────────
 @st.cache_data(show_spinner="Processing your data...")
 def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
-            subcat_target=None, cat_size_target=None, cat_adv_modes=None):
+            subcat_target=None, cat_size_target=None, cat_adv_modes=None,
+            last_received_cutoff=None):
     merged = load_raw(kova_bytes, ocs_bytes)[0]
     active = merged[merged['Sales (30 Days)'] > 0].copy()
+
+    # Apply last-received date cutoff per category
+    if last_received_cutoff and 'Last Received Date' in active.columns:
+        from datetime import datetime as _dtnow
+        _today = _dtnow.utcnow().replace(tzinfo=None)
+        def _keep_row(row):
+            _days = last_received_cutoff.get(row['Classification'], 0)
+            if _days == 0: return True
+            _lr = row['Last Received Date']
+            if pd.isna(_lr): return True  # no date = keep (don't penalise missing data)
+            return (_today - pd.Timestamp(_lr).replace(tzinfo=None)).days <= _days
+        active = active[active.apply(_keep_row, axis=1)].copy()
     active['Weekly Vel'] = (active['Sales (30 Days)'] / 4).round(2)
     active['Daily Vel']  = active['Sales (30 Days)'] / 30
     active['Days Left']  = active['Days of Stock Left (30 Days)'].round(1)
@@ -1068,7 +1136,7 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
 
     return order_df, deferred_df, all_active
 
-order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES)
+order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, LAST_RECEIVED_CUTOFF)
 
 if order_df.empty:
     st.warning("No items need ordering based on current stock levels and settings.")
