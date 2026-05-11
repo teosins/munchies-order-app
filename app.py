@@ -315,13 +315,16 @@ if not _is_active:
         st.markdown("<p style='text-align:center;color:#666;font-size:0.85rem;margin-bottom:24px'>The smart ordering tool for cannabis retailers</p>", unsafe_allow_html=True)
         st.markdown(f"<div style='text-align:center;background:rgba(137,212,245,0.08);border:1px solid rgba(137,212,245,0.2);border-radius:10px;padding:12px;margin-bottom:24px;color:#89d4f5;font-weight:600'>✨ {_TRIAL_DAYS}-day free trial — no credit card charged until trial ends</div>", unsafe_allow_html=True)
 
-        # handle redirect after button click
-        if st.session_state.get('_checkout_url'):
-            _redirect = st.session_state.pop('_checkout_url')
-            st.components.v1.html(
-                f'<script>window.top.location.href = "{_redirect}";</script>',
-                height=0)
-            st.stop()
+        # Pre-generate checkout URLs once per page load
+        if 'checkout_url_monthly' not in st.session_state or 'checkout_url_yearly' not in st.session_state:
+            with st.spinner("Preparing checkout..."):
+                try:
+                    _cid, _ = _get_or_create_customer(st.session_state.sb_user)
+                    st.session_state['checkout_url_monthly'] = _make_checkout(_cid, _PRICE_MONTHLY)
+                    st.session_state['checkout_url_yearly']  = _make_checkout(_cid, _PRICE_YEARLY)
+                except Exception as _ce:
+                    st.error(f"Could not connect to payment system: {_ce}")
+                    st.stop()
 
         _pc1, _pc2 = st.columns(2)
         with _pc1:
@@ -331,10 +334,9 @@ if not _is_active:
                 <div class='price-period'>per month</div>
             </div>""", unsafe_allow_html=True)
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-            if st.button("Start Free Trial — Monthly", use_container_width=True, key="sub_monthly"):
-                _cid, _ = _get_or_create_customer(st.session_state.sb_user)
-                st.session_state['_checkout_url'] = _make_checkout(_cid, _PRICE_MONTHLY)
-                st.rerun()
+            st.link_button("Start Free Trial — Monthly",
+                           url=st.session_state['checkout_url_monthly'],
+                           use_container_width=True)
 
         with _pc2:
             st.markdown("""<div class='price-card' style='border-color:rgba(137,212,245,0.4)'>
@@ -344,10 +346,9 @@ if not _is_active:
                 <div class='price-save'>Save $500 vs monthly</div>
             </div>""", unsafe_allow_html=True)
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-            if st.button("Start Free Trial — Yearly", use_container_width=True, key="sub_yearly"):
-                _cid, _ = _get_or_create_customer(st.session_state.sb_user)
-                st.session_state['_checkout_url'] = _make_checkout(_cid, _PRICE_YEARLY)
-                st.rerun()
+            st.link_button("Start Free Trial — Yearly",
+                           url=st.session_state['checkout_url_yearly'],
+                           use_container_width=True)
 
         st.markdown("<p style='text-align:center;color:#555;font-size:0.78rem;margin-top:16px'>Cancel anytime · Secure payments via Stripe · Have a referral code? Enter it at checkout.</p>", unsafe_allow_html=True)
 
