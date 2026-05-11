@@ -320,7 +320,9 @@ def _sync_from_stripe(user_id, debug=False):
                 st.info("No subscription found in Stripe yet — wait a moment after completing checkout, then try again.")
     except Exception as _e:
         if debug:
-            st.error(f"Stripe check error: {_e}")
+            import traceback
+            st.error(f"Stripe check error ({type(_e).__name__}): {_e}")
+            st.code(traceback.format_exc())
     return False
 
 _sub       = _check_sub(st.session_state.sb_user.id)
