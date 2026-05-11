@@ -1568,6 +1568,19 @@ with tab3:
             subcat_shelf = sc_raw.groupby(['Classification','Sub-Category','Product Size','Strain'])['SKU'].nunique().reset_index()
             subcat_shelf.columns = ['Category','Sub-Category','Size','Strain','On Shelf']
 
+    # ── cart boost: each cart SKU counts as +1 on-shelf for its (cat, size, strain) ──
+    if 'menu_cart' not in st.session_state:
+        st.session_state['menu_cart'] = {}
+    _cart_boost       = {}   # (cat, size, strain) -> int
+    _cart_subcat_boost = {}  # (cat, subcat, size, strain) -> int
+    for _cb_item in st.session_state['menu_cart'].values():
+        _cb_key = (_cb_item.get('Category',''), _cb_item.get('Size',''), _cb_item.get('Strain',''))
+        _cart_boost[_cb_key] = _cart_boost.get(_cb_key, 0) + 1
+        _cb_sc = _cb_item.get('Sub-Type','')
+        if _cb_sc:
+            _cb_skey = (_cb_item.get('Category',''), _cb_sc, _cb_item.get('Size',''), _cb_item.get('Strain',''))
+            _cart_subcat_boost[_cb_skey] = _cart_subcat_boost.get(_cb_skey, 0) + 1
+
     # ── gap helpers ───────────────────────────────────────────
     def highlight_gap(val):
         if val > 0: return 'background-color:#FFC7CE;font-weight:bold'
@@ -1582,7 +1595,7 @@ with tab3:
                     (shelf_counts['Category']==cat) &
                     (shelf_counts['Size']==size) &
                     (shelf_counts['Strain']==strain)
-                ]['On Shelf'].sum())
+                ]['On Shelf'].sum()) + _cart_boost.get((cat, size, strain), 0)
                 rows.append({'Size': size, 'Strain': strain, 'Target': tgt, 'On Shelf': cur, 'Gap': max(0, tgt-cur)})
         if not rows:
             return pd.DataFrame(0, index=sizes, columns=STRAINS)
@@ -1613,6 +1626,7 @@ with tab3:
                         (subcat_shelf['Size']==size) &
                         (subcat_shelf['Strain']==strain)
                     ]['On Shelf'].sum())
+                cur += _cart_subcat_boost.get((cat, sc, size, strain), 0)
                 rows.append({'Size': size, 'Strain': strain, 'Target': tgt, 'On Shelf': cur, 'Gap': max(0, tgt-cur)})
         if not rows:
             return pd.DataFrame(0, index=sc_sizes, columns=STRAINS)
@@ -1727,9 +1741,6 @@ with tab3:
                             'Unit Price': r['Unit Price'] if pd.notna(r.get('Unit Price')) else None,
                             'Prev. Sold (60d)': int(r['Sales (60 Days)']) if pd.notna(r.get('Sales (60 Days)')) else 0,
                         })
-
-        if 'menu_cart' not in st.session_state:
-            st.session_state['menu_cart'] = {}
 
         if suggestions:
             _has_subtype = any(s.get('Sub-Type') for s in suggestions)
