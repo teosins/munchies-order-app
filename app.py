@@ -478,14 +478,36 @@ if not _is_active:
             st.rerun()
     st.stop()
 
-# ── sub-category definitions (module-level so save button can reference before widgets) ──
-_SUBCAT_DEFS = [
+# ── advanced mode definitions ─────────────────────────────────
+_SUBCAT_DEFS = [  # kept for profile save compat
     ('Vapes',        ['Closed Loop Pods','Disposable Pens','510 Thread Cartridges'],                    21),
     ('Pre-Roll',     ['Singles','Multipacks'],                                                           14),
     ('Edibles',      ['Baked Goods','Chocolates','Soft Chews','Hard Chews','Confections'],               14),
     ('Topicals',     ['Creams And Lotions','Body Care','Face Care','Patches','Lip Care','Bath'],         30),
     ('Concentrates', ['Shatter','Resin','Rosin','Wax','Distillate','Diamonds'],                         14),
 ]
+
+_ADV_CATS = ['Flower','Vapes','Pre-Roll','Edibles','Topicals','Concentrates']
+
+_CAT_SIZE_DEFS = {
+    'Flower':       [('1g',7),('3.5g',14),('5g',14),('7g',14),('14g',21),('28g',30),('30g',30),('other',14)],
+    'Vapes':        [('0.5g',21),('1g',21)],
+    'Pre-Roll':     [('0.5g',14),('1g',14),('1.5g',14),('2g',14),('3g',14),('3.5g',14)],
+    'Edibles':      [('10mg',14),('25mg',14),('50mg',14),('100mg',14),('200mg',14),('250mg',14)],
+    'Topicals':     [('25ml',30),('50ml',30),('100ml',30),('250ml',30)],
+    'Concentrates': [('0.5g',14),('1g',14),('2g',14),('3.5g',14)],
+}
+
+_CAT_SUBCAT_DEFS = {
+    'Flower':       ['Whole Flower','Milled Flower','Variety Packs','Hash and Kief'],
+    'Vapes':        ['Closed Loop Pods','Disposable Pens','510 Thread Cartridges'],
+    'Pre-Roll':     ['Singles','Multipacks'],
+    'Edibles':      ['Baked Goods','Chocolates','Soft Chews','Hard Chews','Confections'],
+    'Topicals':     ['Creams And Lotions','Body Care','Face Care','Patches','Lip Care','Bath'],
+    'Concentrates': ['Shatter','Resin','Rosin','Wax','Distillate','Diamonds'],
+}
+
+_ADV_DEFAULTS = {'Flower':14,'Vapes':21,'Pre-Roll':14,'Edibles':14,'Topicals':30,'Concentrates':14}
 
 def _build_settings_from_state(prof_name):
     _prov = st.session_state.get('s_province', 'Ontario')
@@ -524,6 +546,21 @@ def _build_settings_from_state(prof_name):
             f"{_c}||{_sc}": int(st.session_state.get(
                 f"sc_{_c}_{_sc}".replace(' ','_').replace('-','_').replace('/','_'), _d))
             for _c, _scs, _d in _SUBCAT_DEFS for _sc in _scs
+        },
+        'cat_adv_modes': {
+            _ac: st.session_state.get(f"adv_{_ac.replace('-','_').replace(' ','_')}_mode", 'By Size')
+            for _ac in _ADV_CATS
+        },
+        'cat_size_targets': {
+            f"{_ac}||{_sz}": int(st.session_state.get(
+                f"sz_{_ac}_{_sz}".replace('-','_').replace(' ','_'), _d))
+            for _ac in _ADV_CATS for _sz, _d in _CAT_SIZE_DEFS[_ac]
+        },
+        'adv_flower_subcats': {
+            _asc: int(st.session_state.get(
+                f"sc_Flower_{_asc}".replace(' ','_').replace('-','_').replace('/','_'),
+                _ADV_DEFAULTS['Flower']))
+            for _asc in _CAT_SUBCAT_DEFS['Flower']
         },
     }
 
@@ -659,6 +696,15 @@ with st.sidebar:
                 _scat, _ssc = _encoded.split('||', 1)
                 _ssk = f"sc_{_scat}_{_ssc}".replace(' ','_').replace('-','_').replace('/','_')
                 st.session_state[_ssk] = int(_val)
+        for _ac, _am in p.get('cat_adv_modes', {}).items():
+            st.session_state[f"adv_{_ac.replace('-','_').replace(' ','_')}_mode"] = _am
+        for _encoded, _val in p.get('cat_size_targets', {}).items():
+            if '||' in _encoded:
+                _ac, _sz = _encoded.split('||', 1)
+                st.session_state[f"sz_{_ac}_{_sz}".replace('-','_').replace(' ','_')] = int(_val)
+        for _asc, _val in p.get('adv_flower_subcats', {}).items():
+            _sk = f"sc_Flower_{_asc}".replace(' ','_').replace('-','_').replace('/','_')
+            st.session_state[_sk] = int(_val)
 
     if _prof_names:
         _sel = st.selectbox("Load a saved location", ["— select —"] + _prof_names, key="prof_select")
@@ -729,33 +775,45 @@ with st.sidebar:
         return _w.number_input(label, value=st.session_state.get(default_key, default_val),
                                min_value=1, max_value=90, key=default_key)
 
-    # ── always render Flower ───────────────────────────────────
+    # Defaults pulled from session_state (overridden by inputs below)
+    t_preroll   = st.session_state.get('t_preroll',   14)
+    t_edibles   = st.session_state.get('t_edibles',   14)
+    t_vapes     = st.session_state.get('t_vapes',     21)
+    t_beverages = st.session_state.get('t_beverages', 14)
+    t_capsules  = st.session_state.get('t_capsules',  21)
+    t_conc      = st.session_state.get('t_conc',      14)
+    t_topicals  = st.session_state.get('t_topicals',  30)
+    t_oil       = st.session_state.get('t_oil',       21)
+    t_seeds     = st.session_state.get('t_seeds',     60)
+    SUBCAT_TARGET   = {}
+    CAT_SIZE_TARGET = {}
+    CAT_ADV_MODES   = {}
+
     if _dos_mode == "Simple":
         _dc1, _dc2 = st.columns(2)
-        t_flower_all  = _ni("Flower",      "f_all",  14, _dc1)
-        t_preroll     = _ni("Pre-Roll",    "t_preroll", 14, _dc1)
-        t_edibles     = _ni("Edibles",     "t_edibles", 14, _dc1)
-        t_vapes       = _ni("Vapes",       "t_vapes",   21, _dc1)
-        t_beverages   = _ni("Beverages",   "t_beverages",14,_dc1)
-        t_capsules    = _ni("Capsules",    "t_capsules", 21, _dc2)
-        t_conc        = _ni("Concentrates","t_conc",     14, _dc2)
-        t_topicals    = _ni("Topicals",    "t_topicals", 30, _dc2)
-        t_oil         = _ni("Oil",         "t_oil",      21, _dc2)
-        t_seeds       = _ni("Seeds",       "t_seeds",    60, _dc2)
-        _fv = t_flower_all
-        FLOWER_SIZE_TARGET = {s: _fv for s in ['1g','3.5g','5g','7g','14g','28g','30g','other']}
-        SUBCAT_TARGET = {}
-    else:
-        with st.expander("🌸 Flower (by size)", expanded=(_dos_mode=="Normal")):
+        t_flower_all = _ni("Flower",       "f_all",       14, _dc1)
+        t_preroll    = _ni("Pre-Roll",     "t_preroll",   14, _dc1)
+        t_edibles    = _ni("Edibles",      "t_edibles",   14, _dc1)
+        t_vapes      = _ni("Vapes",        "t_vapes",     21, _dc1)
+        t_beverages  = _ni("Beverages",    "t_beverages", 14, _dc1)
+        t_capsules   = _ni("Capsules",     "t_capsules",  21, _dc2)
+        t_conc       = _ni("Concentrates", "t_conc",      14, _dc2)
+        t_topicals   = _ni("Topicals",     "t_topicals",  30, _dc2)
+        t_oil        = _ni("Oil",          "t_oil",       21, _dc2)
+        t_seeds      = _ni("Seeds",        "t_seeds",     60, _dc2)
+        FLOWER_SIZE_TARGET = {s: t_flower_all for s in ['1g','3.5g','5g','7g','14g','28g','30g','other']}
+
+    elif _dos_mode == "Normal":
+        with st.expander("🌸 Flower (by size)", expanded=True):
             fc1, fc2 = st.columns(2)
-            t_flower_1g   = _ni("1g",    "f1g",    7,  fc1)
-            t_flower_35g  = _ni("3.5g",  "f35g",  14,  fc1)
-            t_flower_5g   = _ni("5g",    "f5g",   14,  fc1)
-            t_flower_7g   = _ni("7g",    "f7g",   14,  fc1)
-            t_flower_14g  = _ni("14g",   "f14g",  21,  fc2)
-            t_flower_28g  = _ni("28g",   "f28g",  30,  fc2)
-            t_flower_30g  = _ni("30g",   "f30g",  30,  fc2)
-            t_flower_other= _ni("Other", "fother",14,  fc2)
+            t_flower_1g    = _ni("1g",    "f1g",    7,  fc1)
+            t_flower_35g   = _ni("3.5g",  "f35g",  14,  fc1)
+            t_flower_5g    = _ni("5g",    "f5g",   14,  fc1)
+            t_flower_7g    = _ni("7g",    "f7g",   14,  fc1)
+            t_flower_14g   = _ni("14g",   "f14g",  21,  fc2)
+            t_flower_28g   = _ni("28g",   "f28g",  30,  fc2)
+            t_flower_30g   = _ni("30g",   "f30g",  30,  fc2)
+            t_flower_other = _ni("Other", "fother",14,  fc2)
         FLOWER_SIZE_TARGET = {
             '1g': t_flower_1g, '3.5g': t_flower_35g, '5g': t_flower_5g,
             '7g': t_flower_7g, '14g': t_flower_14g, '28g': t_flower_28g,
@@ -772,16 +830,46 @@ with st.sidebar:
         t_oil       = _ni("Oil",          "t_oil",       21, _dc2)
         t_seeds     = _ni("Seeds",        "t_seeds",     60, _dc2)
 
-        SUBCAT_TARGET = {}
-        if _dos_mode == "Advanced":
-            for _scat, _scs, _sdef in _SUBCAT_DEFS:
-                with st.expander(f"🔹 {_scat} (by sub-category)"):
-                    _sc1, _sc2 = st.columns(2)
-                    for _si, _sc in enumerate(_scs):
-                        _sk = f"sc_{_scat}_{_sc}".replace(' ','_').replace('-','_').replace('/','_')
-                        SUBCAT_TARGET[(_scat, _sc)] = (_sc1 if _si%2==0 else _sc2).number_input(
-                            _sc, value=st.session_state.get(_sk, _sdef),
-                            min_value=1, max_value=90, key=_sk)
+    else:  # Advanced — per-category size vs subcat toggle
+        for _acat in _ADV_CATS:
+            _akey  = f"adv_{_acat.replace('-','_').replace(' ','_')}_mode"
+            _icon  = "🌸" if _acat == "Flower" else "🔹"
+            with st.expander(f"{_icon} {_acat}"):
+                _atog = st.radio("", ["By Size","By Subcategory"], horizontal=True,
+                                 index=["By Size","By Subcategory"].index(
+                                     st.session_state.get(_akey,"By Size")),
+                                 key=_akey, label_visibility="collapsed")
+                CAT_ADV_MODES[_acat] = _atog
+                _ac1, _ac2 = st.columns(2)
+                if _atog == "By Size":
+                    for _ai, (_asz, _adef) in enumerate(_CAT_SIZE_DEFS[_acat]):
+                        _ask = f"sz_{_acat}_{_asz}".replace('-','_').replace(' ','_')
+                        _v   = (_ac1 if _ai%2==0 else _ac2).number_input(
+                            _asz, value=st.session_state.get(_ask, _adef),
+                            min_value=1, max_value=90, key=_ask)
+                        CAT_SIZE_TARGET[(_acat, _asz)] = _v
+                else:
+                    _def_sc = _ADV_DEFAULTS.get(_acat, 14)
+                    for _ai, _asc in enumerate(_CAT_SUBCAT_DEFS[_acat]):
+                        _ask = f"sc_{_acat}_{_asc}".replace(' ','_').replace('-','_').replace('/','_')
+                        _v   = (_ac1 if _ai%2==0 else _ac2).number_input(
+                            _asc, value=st.session_state.get(_ask, _def_sc),
+                            min_value=1, max_value=90, key=_ask)
+                        SUBCAT_TARGET[(_acat, _asc)] = _v
+
+        # Build FLOWER_SIZE_TARGET from CAT_SIZE_TARGET when Flower is By Size
+        if CAT_ADV_MODES.get('Flower') == 'By Size':
+            FLOWER_SIZE_TARGET = {sz: CAT_SIZE_TARGET.get(('Flower', sz), d)
+                                  for sz, d in _CAT_SIZE_DEFS['Flower']}
+        else:
+            FLOWER_SIZE_TARGET = {'other': _ADV_DEFAULTS['Flower']}
+
+        st.markdown("**Other Categories**")
+        _dc1, _dc2 = st.columns(2)
+        t_beverages = _ni("Beverages", "t_beverages", 14, _dc1)
+        t_capsules  = _ni("Capsules",  "t_capsules",  21, _dc1)
+        t_oil       = _ni("Oil",       "t_oil",       21, _dc2)
+        t_seeds     = _ni("Seeds",     "t_seeds",     60, _dc2)
 
     TARGET = {
         'Pre-Roll': t_preroll, 'Edibles': t_edibles, 'Vapes': t_vapes,
@@ -885,7 +973,8 @@ merged_raw, ocs_df = load_raw(kova_bytes_raw, ocs_bytes_raw)
 
 # ── process data ──────────────────────────────────────────────
 @st.cache_data(show_spinner="Processing your data...")
-def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax, subcat_target=None):
+def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
+            subcat_target=None, cat_size_target=None, cat_adv_modes=None):
     merged = load_raw(kova_bytes, ocs_bytes)[0]
     active = merged[merged['Sales (30 Days)'] > 0].copy()
     active['Weekly Vel'] = (active['Sales (30 Days)'] / 4).round(2)
@@ -905,12 +994,21 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax, su
         avail = row['Available']; dv = row['Daily Vel']
         dl = row['Days Left'] if pd.notna(row['Days Left']) else 0
         ins = row['In Stock Qty']
-        if row['Classification'] == 'Flower':
-            tgt = flower_size_target.get(row['Flower Size'], flower_size_target.get('other', 14))
+        cat = row['Classification']
+        _sc = row['Sub-Category'] if 'Sub-Category' in row.index and pd.notna(row['Sub-Category']) and row['Sub-Category'] else ''
+        _adv_m = (cat_adv_modes or {}).get(cat)
+        if cat == 'Flower':
+            if _adv_m == 'By Subcategory':
+                tgt = (subcat_target or {}).get(('Flower', _sc), flower_size_target.get('other', target.get('Flower', 14)))
+            else:
+                tgt = flower_size_target.get(row['Flower Size'], flower_size_target.get('other', 14))
+        elif _adv_m == 'By Size':
+            raw_sz = str(row.get('Product Size', '') or '').strip().lower().replace(' ', '')
+            tgt = (cat_size_target or {}).get((cat, raw_sz), target.get(cat, 14))
+        elif _adv_m == 'By Subcategory':
+            tgt = (subcat_target or {}).get((cat, _sc), target.get(cat, 14))
         else:
-            _sc = row['Sub-Category'] if 'Sub-Category' in row.index and pd.notna(row['Sub-Category']) and row['Sub-Category'] else ''
-            tgt = (subcat_target or {}).get((row['Classification'], _sc),
-                   target.get(row['Classification'], 14))
+            tgt = target.get(cat, 14)
         if tier == 'A':
             needed = max(0, math.ceil(dv * tgt) - avail)
             cases  = math.ceil(needed / pack) if needed > 0 else 0
@@ -949,7 +1047,7 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax, su
 
     return order_df, deferred_df, all_active
 
-order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET)
+order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES)
 
 if order_df.empty:
     st.warning("No items need ordering based on current stock levels and settings.")
@@ -1280,7 +1378,7 @@ with tab2:
     st.markdown("### 📋 Suggested Order")
     st.caption("All items that need restocking based on velocity — no hard budget cap. Review the total before submitting.")
 
-    uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999, SUBCAT_TARGET)
+    uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES)
 
     if uncapped_df.empty:
         st.success("✅ Nothing needs restocking right now.")
