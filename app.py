@@ -1568,6 +1568,15 @@ with tab1:
     selected_tiers = [tier_map[l] for l in selected_labels] if selected_labels else list(tier_map.values())
     filtered_df = order_df[order_df['Tier'].isin(selected_tiers)]
 
+    _t1fc1, _t1fc2 = st.columns([2, 1])
+    with _t1fc1:
+        t1_max_days = st.slider(
+            "Max Days Left in Stock",
+            min_value=1, max_value=60, value=60, step=1, key="t1_days_filter",
+            help="Only show items with fewer than this many days of stock remaining."
+        )
+    filtered_df = filtered_df[filtered_df['Days Left'].fillna(0) <= t1_max_days]
+
     if filtered_df.empty:
         st.info("No items match the selected tiers.")
     else:
