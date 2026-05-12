@@ -1583,7 +1583,7 @@ with tab1:
 
         _edit_df = filtered_df[['Classification','Product','Tier','Days Left',
                                  'In Stock Qty','On Order','Sales (7 Days)','Sales (30 Days)',
-                                 'Weekly Vel','Cases','Suggest','Unit Price','Est Cost',
+                                 'Weekly Vel','Daily Vel','Cases','Suggest','Unit Price','Est Cost',
                                  'Pack Size','Supplier Sku']].copy()
         _edit_df['Days Left'] = _edit_df['Days Left'].round(1)
         _edited = st.data_editor(
@@ -1601,6 +1601,7 @@ with tab1:
                 'Sales (7 Days)': st.column_config.NumberColumn('7d Sales',  disabled=True),
                 'Sales (30 Days)':st.column_config.NumberColumn('30d Sales', disabled=True),
                 'Weekly Vel':     st.column_config.NumberColumn('Wkly Vel',  disabled=True, format='%.2f'),
+                'Daily Vel':      st.column_config.NumberColumn('Daily Vel', disabled=True, format='%.3f'),
                 'Cases':          st.column_config.NumberColumn('Cases ✏️',  disabled=False, min_value=0, step=1),
                 'Suggest':        st.column_config.NumberColumn('Units',     disabled=True),
                 'Unit Price':     st.column_config.NumberColumn('Unit Price',disabled=True, format='$%.2f'),
