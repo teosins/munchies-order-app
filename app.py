@@ -1685,12 +1685,57 @@ with tab2:
         uc_taxin  = uc_pretax + uc_tax
         uc_grand  = uc_taxin + (shipping_cost if not ship_in_budget else 0)
 
-        uc1, uc2, uc3, uc4, uc5 = st.columns(5)
-        uc1.metric("SKUs to Order",   len(uc_filtered))
-        uc2.metric("Pre-Tax Total",   f"${uc_pretax:,.2f}")
+        uc1, uc2, uc3, uc4, uc5, uc6 = st.columns(6)
+        uc1.metric("SKUs to Order",     len(uc_filtered))
+        uc2.metric("Pre-Tax Total",     f"${uc_pretax:,.2f}")
         uc3.metric(f"Tax ({tax_rate*100:.3g}%)", f"${uc_tax:,.2f}")
-        uc4.metric("Shipping",        f"${shipping_cost:,}" if shipping_cost > 0 else "—")
-        uc5.metric("Grand Total",     f"${uc_grand:,.2f}")
+        uc4.metric("Subtotal (Tax-In)", f"${uc_taxin:,.2f}")
+        uc5.metric("Shipping",          f"${shipping_cost:,}" if shipping_cost > 0 else "—")
+        uc6.metric("Grand Total",       f"${uc_grand:,.2f}")
+
+        st.markdown("---")
+
+        _uc_cat_costs  = uc_filtered.groupby('Classification')['Est Cost'].sum().sort_values(ascending=False)
+        _uc_tier_costs = uc_filtered.groupby('Tier')['Est Cost'].sum()
+        _CAT_COLORS  = {'Flower':'#89d4f5','Pre-Roll':'#b8e0ff','Vapes':'#7ec8e3','Edibles':'#f5c842','Concentrates':'#e07b39','Beverages':'#6dd6a0','Capsules':'#b89ef5','Oil':'#f5a0c8','Topicals':'#8fd48f','Seeds':'#d4c089'}
+        _TIER_COLORS = {'A':'#4caf80','B':'#8bc34a','C':'#ffc107','D':'#ef5350'}
+
+        _uc_c1, _uc_c2 = st.columns([3, 2])
+        with _uc_c1:
+            _uc_fig_cat = go.Figure(go.Bar(
+                x=_uc_cat_costs.values, y=_uc_cat_costs.index, orientation='h',
+                marker_color=[_CAT_COLORS.get(c,'#89d4f5') for c in _uc_cat_costs.index],
+                text=[f"${v:,.0f}" for v in _uc_cat_costs.values], textposition='outside',
+                hovertemplate='%{y}: $%{x:,.2f}<extra></extra>',
+            ))
+            _uc_fig_cat.update_layout(
+                title=dict(text="Budget by Category", font=dict(size=13, color='#e8e8f0')),
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#e8e8f0', size=11),
+                xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+                yaxis=dict(autorange='reversed', tickfont=dict(size=11)),
+                margin=dict(l=10, r=60, t=36, b=10),
+                height=max(200, len(_uc_cat_costs) * 32 + 60),
+            )
+            st.plotly_chart(_uc_fig_cat, use_container_width=True, config={'displayModeBar': False})
+        with _uc_c2:
+            _tier_label_map = {'A':'A — Fast','B':'B — Mid','C':'C — Slow','D':'D — Very Slow'}
+            _uc_fig_tier = go.Figure(go.Pie(
+                labels=[_tier_label_map.get(t, t) for t in _uc_tier_costs.index],
+                values=_uc_tier_costs.values,
+                marker_colors=[_TIER_COLORS.get(t,'#aaa') for t in _uc_tier_costs.index],
+                hole=0.55, textinfo='label+percent',
+                hovertemplate='%{label}: $%{value:,.2f}<extra></extra>',
+                textfont=dict(size=11),
+            ))
+            _uc_fig_tier.update_layout(
+                title=dict(text="Budget by Tier", font=dict(size=13, color='#e8e8f0')),
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#e8e8f0'), showlegend=False,
+                margin=dict(l=10, r=10, t=36, b=10),
+                height=max(200, len(_uc_cat_costs) * 32 + 60),
+            )
+            st.plotly_chart(_uc_fig_tier, use_container_width=True, config={'displayModeBar': False})
 
         st.markdown("---")
 
