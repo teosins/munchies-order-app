@@ -1568,13 +1568,6 @@ with tab1:
     selected_tiers = [tier_map[l] for l in selected_labels] if selected_labels else list(tier_map.values())
     filtered_df = order_df[order_df['Tier'].isin(selected_tiers)]
 
-    max_days = st.slider(
-        "Only show items running out within N days (Days Left ≤)",
-        min_value=1, max_value=60, value=60, step=1, key="t1_days_filter",
-        help="Hides items that still have more than this many days of stock — they don't need to be on this order."
-    )
-    filtered_df = filtered_df[filtered_df['Days Left'].fillna(0) <= max_days]
-
     if filtered_df.empty:
         st.info("No items match the selected tiers.")
     else:
@@ -1677,6 +1670,15 @@ with tab2:
         )
         uc_selected_tiers = [uc_tier_map[l] for l in uc_selected_labels] if uc_selected_labels else list(uc_tier_map.values())
         uc_filtered = uncapped_df[uncapped_df['Tier'].isin(uc_selected_tiers)]
+
+        _fc1, _fc2 = st.columns([2, 1])
+        with _fc1:
+            uc_max_days = st.slider(
+                "Max Days Left in Stock",
+                min_value=1, max_value=60, value=60, step=1, key="t2_days_filter",
+                help="Only show items with fewer than this many days of stock remaining. Lower = more urgent only."
+            )
+        uc_filtered = uc_filtered[uc_filtered['Days Left'].fillna(0) <= uc_max_days]
 
         uc_pretax = uc_filtered['Est Cost'].sum()
         uc_tax    = uc_pretax * tax_rate
