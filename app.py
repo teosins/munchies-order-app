@@ -980,6 +980,16 @@ with st.sidebar:
         st.caption(f"Pre-tax: ${budget_pretax:,.2f}  |  Tax ({tax_rate*100:.3g}%): ${tax_amount:,.2f}"
                    + (f"  |  Shipping deducted: ${shipping_cost:,}" if ship_in_budget and shipping_cost > 0 else ""))
 
+        st.markdown("---")
+        st.markdown("**Delivery Settings**")
+        lead_time_days  = st.number_input("OCS Lead Time (days)", value=st.session_state.get('s_lead_time', 4),
+                                           min_value=1, max_value=14, step=1, key="s_lead_time",
+                                           help="Days from placing an order to receiving stock from OCS.")
+        order_cycle_days = st.number_input("Order Cycle (days)", value=st.session_state.get('s_order_cycle', 7),
+                                            min_value=1, max_value=30, step=1, key="s_order_cycle",
+                                            help="How often you place orders (e.g. 7 = weekly).")
+        st.caption(f"Items with Net Days < {lead_time_days}d = Critical · < {lead_time_days + order_cycle_days}d = At Risk")
+
     with _stab2:
         st.markdown("**Target Days of Supply**")
         _dos_mode = st.radio("Mode", ["Simple", "Normal", "Advanced"],
@@ -1271,6 +1281,23 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
 _lrc_serial = {(f"{k[0]}||{k[1]}" if isinstance(k, tuple) else k): v
                for k, v in LAST_RECEIVED_CUTOFF.items()}
 order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial)
+
+def _add_risk(df, lead_time, order_cycle):
+    if df.empty:
+        return df
+    df = df.copy()
+    df['Net Days'] = (df['In Stock Qty'] + df['On Order']) / df['Daily Vel'].replace(0, float('nan'))
+    df['Net Days'] = df['Net Days'].fillna(999).round(1)
+    def _risk(nd):
+        if nd < lead_time:             return 'Critical'
+        elif nd < lead_time + order_cycle: return 'At Risk'
+        else:                          return 'Stable'
+    df['Risk'] = df['Net Days'].apply(_risk)
+    return df
+
+order_df    = _add_risk(order_df,    lead_time_days, order_cycle_days)
+deferred_df = _add_risk(deferred_df, lead_time_days, order_cycle_days)
+all_active  = _add_risk(all_active,  lead_time_days, order_cycle_days)
 
 if order_df.empty:
     st.warning("No items need ordering based on current stock levels and settings.")
@@ -1568,14 +1595,16 @@ with tab1:
     selected_tiers = [tier_map[l] for l in selected_labels] if selected_labels else list(tier_map.values())
     filtered_df = order_df[order_df['Tier'].isin(selected_tiers)]
 
-    _t1fc1, _t1fc2 = st.columns([2, 1])
-    with _t1fc1:
-        t1_max_days = st.slider(
-            "Max Days Left in Stock",
-            min_value=1, max_value=60, value=60, step=1, key="t1_days_filter",
-            help="Only show items with fewer than this many days of stock remaining."
-        )
-    filtered_df = filtered_df[filtered_df['Days Left'].fillna(0) <= t1_max_days]
+    t1_risk = st.radio(
+        "Filter by stockout risk (based on Net Days of Stock = In Stock + On Order ÷ Daily Vel)",
+        ["All", "At Risk or Critical", "Critical only"],
+        horizontal=True, key="t1_risk_filter",
+        help=f"Critical = runs out before this order arrives (<{lead_time_days}d) · At Risk = runs out before next order (<{lead_time_days+order_cycle_days}d)"
+    )
+    if t1_risk == "Critical only":
+        filtered_df = filtered_df[filtered_df['Risk'] == 'Critical']
+    elif t1_risk == "At Risk or Critical":
+        filtered_df = filtered_df[filtered_df['Risk'].isin(['Critical', 'At Risk'])]
 
     if filtered_df.empty:
         st.info("No items match the selected tiers.")
@@ -1590,7 +1619,7 @@ with tab1:
         fa4.metric("Shipping",  f"${shipping_cost:,}" if shipping_cost > 0 else "—")
         fa5.metric("Grand Total", f"${f_grand:,.2f}")
 
-        _edit_df = filtered_df[['Classification','Product','Tier','Days Left',
+        _edit_df = filtered_df[['Classification','Product','Risk','Net Days','Tier','Days Left',
                                  'In Stock Qty','On Order','Sales (7 Days)','Sales (30 Days)',
                                  'Weekly Vel','Daily Vel','Cases','Suggest','Unit Price','Est Cost',
                                  'Pack Size','Supplier Sku']].copy()
@@ -1603,6 +1632,8 @@ with tab1:
             column_config={
                 'Classification': st.column_config.TextColumn('Category',    disabled=True),
                 'Product':        st.column_config.TextColumn('Product',     disabled=True, width='large'),
+                'Risk':           st.column_config.TextColumn('Risk',        disabled=True, width='small'),
+                'Net Days':       st.column_config.NumberColumn('Net Days',  disabled=True, format='%.1f'),
                 'Tier':           st.column_config.TextColumn('Tier',        disabled=True, width='small'),
                 'Days Left':      st.column_config.NumberColumn('Days Left', disabled=True, format='%.1f'),
                 'In Stock Qty':   st.column_config.NumberColumn('In Stock',  disabled=True),
@@ -1666,6 +1697,7 @@ with tab2:
     st.caption("All items that need restocking based on velocity — no hard budget cap. Review the total before submitting.")
 
     uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES)
+    uncapped_df = _add_risk(uncapped_df, lead_time_days, order_cycle_days)
 
     if uncapped_df.empty:
         st.success("✅ Nothing needs restocking right now.")
@@ -1680,14 +1712,16 @@ with tab2:
         uc_selected_tiers = [uc_tier_map[l] for l in uc_selected_labels] if uc_selected_labels else list(uc_tier_map.values())
         uc_filtered = uncapped_df[uncapped_df['Tier'].isin(uc_selected_tiers)]
 
-        _fc1, _fc2 = st.columns([2, 1])
-        with _fc1:
-            uc_max_days = st.slider(
-                "Max Days Left in Stock",
-                min_value=1, max_value=60, value=60, step=1, key="t2_days_filter",
-                help="Only show items with fewer than this many days of stock remaining. Lower = more urgent only."
-            )
-        uc_filtered = uc_filtered[uc_filtered['Days Left'].fillna(0) <= uc_max_days]
+        uc_risk = st.radio(
+            "Filter by stockout risk (based on Net Days of Stock = In Stock + On Order ÷ Daily Vel)",
+            ["All", "At Risk or Critical", "Critical only"],
+            horizontal=True, key="t2_risk_filter",
+            help=f"Critical = runs out before this order arrives (<{lead_time_days}d) · At Risk = runs out before next order (<{lead_time_days+order_cycle_days}d)"
+        )
+        if uc_risk == "Critical only":
+            uc_filtered = uc_filtered[uc_filtered['Risk'] == 'Critical']
+        elif uc_risk == "At Risk or Critical":
+            uc_filtered = uc_filtered[uc_filtered['Risk'].isin(['Critical', 'At Risk'])]
 
         uc_pretax = uc_filtered['Est Cost'].sum()
         uc_tax    = uc_pretax * tax_rate
@@ -1752,18 +1786,22 @@ with tab2:
             st.info("No items match the selected tiers.")
         else:
             uc_display_cols = {
-                'Classification':'Category','Product':'Product','Tier':'Tier',
+                'Classification':'Category','Product':'Product','Risk':'Risk','Net Days':'Net Days','Tier':'Tier',
                 'Days Left':'Days Left','In Stock Qty':'In Stock','On Order':'On Order',
                 'Sales (7 Days)':'7d Sales','Sales (30 Days)':'30d Sales',
                 'Weekly Vel':'Wkly Vel','Cases':'Cases','Suggest':'Units',
                 'Unit Price':'Unit Price','Est Cost':'Est Cost','Supplier Sku':'OCS Variant #'
             }
+            def color_risk(val):
+                return {'Critical':'background-color:#FFC7CE;color:#9C0006',
+                        'At Risk': 'background-color:#FFEB9C;color:#9C6500',
+                        'Stable':  'background-color:#C6EFCE;color:#276221'}.get(val,'')
             uc_show = uc_filtered[[c for c in uc_display_cols if c in uc_filtered.columns]].rename(columns=uc_display_cols).copy()
             uc_show['Unit Price'] = uc_show['Unit Price'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
             uc_show['Est Cost']   = uc_show['Est Cost'].map(lambda x: f'${x:,.2f}' if pd.notna(x) else '—')
             uc_show['Days Left']  = uc_show['Days Left'].round(1)
             st.dataframe(
-                uc_show.style.map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left']),
+                uc_show.style.map(color_risk, subset=['Risk']).map(color_tier, subset=['Tier']).map(color_days, subset=['Days Left']),
                 hide_index=True, use_container_width=True, height=500
             )
 
