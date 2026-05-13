@@ -981,14 +981,19 @@ with st.sidebar:
                    + (f"  |  Shipping deducted: ${shipping_cost:,}" if ship_in_budget and shipping_cost > 0 else ""))
 
         st.markdown("---")
-        st.markdown("**Delivery Settings**")
-        lead_time_days  = st.number_input("OCS Lead Time (days)", value=st.session_state.get('s_lead_time', 4),
-                                           min_value=1, max_value=14, step=1, key="s_lead_time",
-                                           help="Days from placing an order to receiving stock from OCS.")
-        order_cycle_days = st.number_input("Order Cycle (days)", value=st.session_state.get('s_order_cycle', 7),
-                                            min_value=1, max_value=30, step=1, key="s_order_cycle",
-                                            help="How often you place orders (e.g. 7 = weekly).")
-        st.caption(f"Items with Net Days < {lead_time_days}d = Critical · < {lead_time_days + order_cycle_days}d = At Risk")
+        st.markdown("**Delivery Dates**")
+        _today = date.today()
+        delivery_date   = st.date_input("Expected Delivery Date", value=st.session_state.get('s_delivery_date', _today + __import__('datetime').timedelta(days=4)),
+                                         min_value=_today, key="s_delivery_date",
+                                         help="When you expect to receive this order from OCS.")
+        next_order_date = st.date_input("Next Order Date", value=st.session_state.get('s_next_order_date', _today + __import__('datetime').timedelta(days=7)),
+                                         min_value=_today, key="s_next_order_date",
+                                         help="When you plan to place your next order.")
+        lead_time_days   = max(1, (delivery_date   - _today).days)
+        _next_lead       = lead_time_days
+        _next_delivery   = next_order_date + __import__('datetime').timedelta(days=_next_lead)
+        order_cycle_days = max(1, (_next_delivery - _today).days)
+        st.caption(f"Critical = out before {delivery_date.strftime('%b %d')} ({lead_time_days}d) · At Risk = out before {_next_delivery.strftime('%b %d')} ({order_cycle_days}d)")
 
     with _stab2:
         st.markdown("**Target Days of Supply**")
