@@ -7,131 +7,297 @@ from datetime import date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-st.set_page_config(page_title="OPAL Order Tool", page_icon="💎", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Fillrate", page_icon="📦", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+
+/* ── global font ── */
+html, body, [class*="css"], .stApp, button, input, select, textarea {
+    font-family: 'Inter', sans-serif !important;
+}
+
 /* ── hide default streamlit chrome ── */
 #MainMenu, footer, header {visibility: hidden;}
 
 /* ── app background ── */
 .stApp {
-    background: radial-gradient(ellipse at top left, #0e0e1a 0%, #08080f 60%);
+    background: #0a0a12;
+}
+
+/* ── main content padding ── */
+.block-container {
+    padding-top: 2rem !important;
+    padding-left: 2.5rem !important;
+    padding-right: 2.5rem !important;
 }
 
 /* ── sidebar ── */
 [data-testid="stSidebar"] {
-    background: #0c0c18 !important;
-    border-right: 1px solid rgba(137,212,245,0.15);
+    background: #0d0d1a !important;
+    border-right: 1px solid rgba(255,255,255,0.06);
 }
-[data-testid="stSidebar"] .stMarkdown h2 {
-    background: linear-gradient(135deg, #89d4f5, #c9a6ff, #f5a6d3);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-size: 1.3rem;
-    letter-spacing: 0.12em;
-    font-weight: 700;
+[data-testid="stSidebar"] > div {
+    padding-top: 1.2rem;
 }
 
 /* ── metric cards ── */
 [data-testid="metric-container"] {
-    background: rgba(137,212,245,0.04);
-    border: 1px solid rgba(137,212,245,0.18);
-    border-radius: 10px;
-    padding: 14px 18px;
-    box-shadow: 0 0 18px rgba(137,212,245,0.06);
+    background: #13131f;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px;
+    padding: 16px 20px;
+    transition: border-color 0.2s;
+}
+[data-testid="metric-container"]:hover {
+    border-color: rgba(137,212,245,0.25);
 }
 [data-testid="metric-container"] [data-testid="stMetricLabel"] {
-    color: #89d4f5 !important;
-    font-size: 0.72rem;
-    letter-spacing: 0.1em;
+    color: #6b7280 !important;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
 }
 [data-testid="metric-container"] [data-testid="stMetricValue"] {
-    color: #e8e8f0 !important;
-    font-size: 1.4rem;
+    color: #f0f0f8 !important;
+    font-size: 1.5rem;
     font-weight: 700;
+    letter-spacing: -0.02em;
 }
 
 /* ── tabs ── */
 .stTabs [data-baseweb="tab-list"] {
-    background: #12121e;
+    background: #13131f;
     border-radius: 10px;
     padding: 4px;
-    gap: 4px;
-    border: 1px solid rgba(137,212,245,0.12);
+    gap: 2px;
+    border: 1px solid rgba(255,255,255,0.06);
 }
 .stTabs [data-baseweb="tab"] {
-    border-radius: 7px;
-    color: #888 !important;
+    border-radius: 8px;
+    color: #6b7280 !important;
     font-weight: 500;
-    letter-spacing: 0.04em;
-    padding: 8px 20px;
+    font-size: 0.875rem;
+    letter-spacing: 0.01em;
+    padding: 8px 22px;
+    transition: all 0.15s;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    color: #d1d5db !important;
+    background: rgba(255,255,255,0.04) !important;
 }
 .stTabs [aria-selected="true"] {
-    background: rgba(137,212,245,0.1) !important;
+    background: rgba(137,212,245,0.08) !important;
     color: #89d4f5 !important;
     border-bottom: 2px solid #89d4f5 !important;
+    font-weight: 600 !important;
+}
+
+/* ── all buttons ── */
+.stButton button {
+    background: #13131f;
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #d1d5db !important;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.875rem;
+    padding: 8px 18px;
+    transition: all 0.15s;
+    letter-spacing: 0.01em;
+}
+.stButton button:hover {
+    background: #1a1a2e;
+    border-color: rgba(137,212,245,0.3);
+    color: #89d4f5 !important;
+}
+.stButton button[kind="primary"] {
+    background: rgba(137,212,245,0.1);
+    border-color: rgba(137,212,245,0.35);
+    color: #89d4f5 !important;
 }
 
 /* ── download buttons ── */
 [data-testid="stDownloadButton"] button {
-    background: linear-gradient(135deg, rgba(137,212,245,0.15), rgba(201,166,255,0.15));
-    border: 1px solid rgba(137,212,245,0.35);
+    background: rgba(137,212,245,0.08);
+    border: 1px solid rgba(137,212,245,0.25);
     color: #89d4f5 !important;
     border-radius: 8px;
     font-weight: 600;
-    letter-spacing: 0.05em;
-    transition: all 0.2s;
+    font-size: 0.875rem;
+    letter-spacing: 0.02em;
+    transition: all 0.15s;
+    width: 100%;
 }
 [data-testid="stDownloadButton"] button:hover {
-    background: linear-gradient(135deg, rgba(137,212,245,0.28), rgba(201,166,255,0.28));
-    border-color: #89d4f5;
-    box-shadow: 0 0 16px rgba(137,212,245,0.25);
+    background: rgba(137,212,245,0.16);
+    border-color: rgba(137,212,245,0.5);
+    box-shadow: 0 0 20px rgba(137,212,245,0.12);
 }
 
 /* ── expanders ── */
 [data-testid="stExpander"] {
-    border: 1px solid rgba(137,212,245,0.15) !important;
-    border-radius: 10px !important;
-    background: rgba(137,212,245,0.02);
+    border: 1px solid rgba(255,255,255,0.07) !important;
+    border-radius: 12px !important;
+    background: #13131f !important;
+    transition: border-color 0.2s;
+}
+[data-testid="stExpander"]:hover {
+    border-color: rgba(137,212,245,0.2) !important;
 }
 
 /* ── multiselect ── */
-[data-baseweb="select"] {
-    background: #12121e;
+[data-baseweb="select"] > div {
+    background: #13131f !important;
+    border-color: rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
 }
 [data-baseweb="tag"] {
-    background: rgba(137,212,245,0.15) !important;
-    border: 1px solid rgba(137,212,245,0.3) !important;
+    background: rgba(137,212,245,0.1) !important;
+    border: 1px solid rgba(137,212,245,0.25) !important;
     color: #89d4f5 !important;
+    border-radius: 6px !important;
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
 }
 
 /* ── section headings ── */
+.stMarkdown h2 {
+    color: #f0f0f8;
+    font-weight: 700;
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+}
 .stMarkdown h3 {
-    background: linear-gradient(135deg, #89d4f5, #c9a6ff);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    letter-spacing: 0.06em;
+    color: #e0e0ec;
+    font-weight: 600;
+    font-size: 1.1rem;
+    letter-spacing: -0.01em;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 /* ── dataframe ── */
 [data-testid="stDataFrame"] {
-    border: 1px solid rgba(137,212,245,0.12);
-    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
     overflow: hidden;
 }
 
-/* ── number inputs & selectbox ── */
-[data-testid="stNumberInput"] input,
-[data-baseweb="select"] div {
-    background: #12121e !important;
-    border-color: rgba(137,212,245,0.2) !important;
+/* ── number inputs ── */
+[data-testid="stNumberInput"] input {
+    background: #13131f !important;
+    border-color: rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+    color: #f0f0f8 !important;
+    font-family: 'Inter', sans-serif !important;
+}
+[data-testid="stNumberInput"] input:focus {
+    border-color: rgba(137,212,245,0.4) !important;
+    box-shadow: 0 0 0 2px rgba(137,212,245,0.08) !important;
+}
+
+/* ── text inputs ── */
+[data-testid="stTextInput"] input {
+    background: #13131f !important;
+    border-color: rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+    color: #f0f0f8 !important;
+    font-family: 'Inter', sans-serif !important;
+}
+[data-testid="stTextInput"] input:focus {
+    border-color: rgba(137,212,245,0.4) !important;
+    box-shadow: 0 0 0 2px rgba(137,212,245,0.08) !important;
+}
+
+/* ── date input ── */
+[data-testid="stDateInput"] input {
+    background: #13131f !important;
+    border-color: rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+    color: #f0f0f8 !important;
+}
+
+/* ── sliders ── */
+[data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] {
+    background: #89d4f5 !important;
+    border: 2px solid #89d4f5 !important;
+    box-shadow: 0 0 8px rgba(137,212,245,0.4) !important;
+}
+[data-testid="stSlider"] [data-baseweb="slider"] div[data-testid="stSliderTrack"] {
+    background: rgba(255,255,255,0.08) !important;
+}
+
+/* ── radio buttons ── */
+[data-testid="stRadio"] label {
+    background: #13131f;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    color: #9ca3af;
+    transition: all 0.15s;
+    cursor: pointer;
+}
+[data-testid="stRadio"] label:hover {
+    border-color: rgba(137,212,245,0.25);
+    color: #d1d5db;
+}
+[data-testid="stRadio"] [aria-checked="true"] + div label,
+[data-testid="stRadio"] input:checked ~ label {
+    border-color: rgba(137,212,245,0.4) !important;
+    color: #89d4f5 !important;
+    background: rgba(137,212,245,0.06) !important;
+}
+
+/* ── selectbox ── */
+[data-testid="stSelectbox"] > div > div {
+    background: #13131f !important;
+    border-color: rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+}
+
+/* ── checkbox ── */
+[data-testid="stCheckbox"] label {
+    color: #9ca3af;
+    font-size: 0.875rem;
+}
+
+/* ── captions ── */
+[data-testid="stCaptionContainer"] {
+    color: #6b7280 !important;
+    font-size: 0.78rem !important;
+}
+
+/* ── info/success/warning boxes ── */
+[data-testid="stAlert"] {
+    border-radius: 10px !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    font-size: 0.875rem;
 }
 
 /* ── dividers ── */
 hr {
-    border-color: rgba(137,212,245,0.12) !important;
+    border: none !important;
+    border-top: 1px solid rgba(255,255,255,0.06) !important;
+    margin: 1.2rem 0 !important;
+}
+
+/* ── sidebar labels ── */
+[data-testid="stSidebar"] label {
+    color: #9ca3af !important;
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.02em;
+}
+
+/* ── data editor ── */
+[data-testid="stDataEditor"] {
+    border: 1px solid rgba(255,255,255,0.07) !important;
+    border-radius: 10px !important;
+    overflow: hidden;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -183,7 +349,7 @@ if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
             st.image("opal_logo.png", use_container_width=True)
         except Exception:
             pass
-        st.markdown("<div class='login-title'>OPAL ORDER TOOL</div>", unsafe_allow_html=True)
+        st.markdown("<div class='login-title'>FILLRATE</div>", unsafe_allow_html=True)
         st.markdown("<div class='login-sub'>Sign in to continue</div>", unsafe_allow_html=True)
 
         # pre-fill saved email from localStorage
@@ -1173,7 +1339,7 @@ st.markdown(
 )
 
 if not kova_file or not ocs_file:
-    st.info("Upload your **Cova Reorder Report** and **OCS Catalogue** in the sidebar to get started with OPAL.")
+    st.info("Upload your **Cova Reorder Report** and **OCS Catalogue** in the sidebar to get started.")
     st.markdown("""
     **How to export from Cova:**
     Reports → Reorder → Export as .xlsx
