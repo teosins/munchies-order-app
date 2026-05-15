@@ -1130,15 +1130,17 @@ with st.sidebar:
             st.caption(f"Tax rate: {tax_rate*100:.3g}%")
 
         budget = st.number_input("Weekly Budget (tax-in)", value=st.session_state.get('s_budget', 30000),
-                                 step=500, format="%d", key="s_budget")
+                                 step=500, format="%d", key="s_budget",
+                                 help="Your total weekly spend limit including tax. The app prioritizes the most urgent items to fit within this amount. Items that don't fit are moved to the Deferred list.")
 
         st.markdown("**Shipping**")
         shipping_cost  = st.number_input("Shipping Cost ($)", value=st.session_state.get('s_shipping', 0),
-                                         min_value=0, step=5, format="%d", key="s_shipping")
+                                         min_value=0, step=5, format="%d", key="s_shipping",
+                                         help="Your OCS delivery fee per order. Leave at 0 if shipping is free or included.")
         ship_in_budget = st.checkbox("Deduct shipping from order budget",
                                       value=st.session_state.get('s_ship_in_budget', False),
                                       key="s_ship_in_budget",
-                                      help="When checked, shipping is subtracted before calculating how much product you can order.")
+                                      help="When checked, the shipping cost is subtracted from your budget before calculating how much product you can order. Uncheck to track shipping separately.")
 
         effective_budget = budget - shipping_cost if ship_in_budget else budget
         budget_pretax    = round(effective_budget / (1 + tax_rate), 2)
@@ -1150,26 +1152,30 @@ with st.sidebar:
         _th_title, _th_btn = st.columns([2,1])
         _th_title.markdown("**Tier Thresholds** *(weekly units sold)*")
         if _th_btn.button("Reset", key="reset_tiers", use_container_width=True):
-            for _k, _v in [('s_tier_a',5),('s_tier_b',2),('s_tier_c',1),('s_tier_d',0.0)]:
+            for _k, _v in [('s_tier_a',7),('s_tier_b',3),('s_tier_c',1),('s_tier_d',0.5)]:
                 st.session_state[_k] = _v
             st.rerun()
-        st.caption("Items are graded A→D based on weekly velocity. Items below D are excluded.")
+        st.caption("Items are graded A→D based on weekly velocity. Items below D are excluded from orders.")
         _tc1, _tc2 = st.columns(2)
-        tier_a = _tc1.number_input("A — Fast (≥)",     value=st.session_state.get('s_tier_a', 5),   min_value=1,   max_value=99,  step=1,   key="s_tier_a")
-        tier_b = _tc2.number_input("B — Mid (≥)",       value=st.session_state.get('s_tier_b', 2),   min_value=1,   max_value=99,  step=1,   key="s_tier_b")
+        tier_a = _tc1.number_input("A — Fast (≥)", value=st.session_state.get('s_tier_a', 7), min_value=1, max_value=99, step=1, key="s_tier_a",
+                                    help="Top sellers. These items move fast and should always be in stock. The app orders enough to last your full target days of supply.")
+        tier_b = _tc2.number_input("B — Mid (≥)",  value=st.session_state.get('s_tier_b', 3), min_value=1, max_value=99, step=1, key="s_tier_b",
+                                    help="Solid movers. The app orders enough to keep about 10 days of stock — not as aggressive as A tier but still a priority.")
         _tc3, _tc4 = st.columns(2)
-        tier_c = _tc3.number_input("C — Slow (≥)",     value=st.session_state.get('s_tier_c', 1),   min_value=1,   max_value=99,  step=1,   key="s_tier_c")
-        tier_d = _tc4.number_input("D — Very Slow (≥)", value=st.session_state.get('s_tier_d', 0.0), min_value=0.0, max_value=99.0, step=0.5, key="s_tier_d", format="%.1f")
+        tier_c = _tc3.number_input("C — Slow (≥)", value=st.session_state.get('s_tier_c', 1), min_value=1, max_value=99, step=1, key="s_tier_c",
+                                    help="Slow movers. The app orders 1 case at a time just to keep the shelf from going empty.")
+        tier_d = _tc4.number_input("D — Very Slow (≥)", value=st.session_state.get('s_tier_d', 0.5), min_value=0.0, max_value=99.0, step=0.5, key="s_tier_d", format="%.1f",
+                                    help="Barely moving items. The app orders 1 case only if you're completely out of stock. Set to 0 to include all items regardless of velocity.")
 
         st.markdown("---")
         st.markdown("**Delivery Dates**")
         _today = date.today()
         delivery_date   = st.date_input("Expected Delivery Date", value=st.session_state.get('s_delivery_date', _today + __import__('datetime').timedelta(days=4)),
                                          min_value=_today, key="s_delivery_date",
-                                         help="When you expect to receive this order from OCS.")
+                                         help="The date you expect to receive this order from OCS. Used to identify Critical items — products that will sell out before your order even arrives.")
         next_order_date = st.date_input("Next Order Date", value=st.session_state.get('s_next_order_date', _today + __import__('datetime').timedelta(days=7)),
                                          min_value=_today, key="s_next_order_date",
-                                         help="When you plan to place your next order.")
+                                         help="The date you plan to place your next order. Used to identify At Risk items — products that will be fine for now but will sell out before your next order arrives.")
         lead_time_days   = max(1, (delivery_date   - _today).days)
         _next_lead       = lead_time_days
         _next_delivery   = next_order_date + __import__('datetime').timedelta(days=_next_lead)
@@ -1178,9 +1184,11 @@ with st.sidebar:
 
     with _stab2:
         st.markdown("**Target Days of Supply**")
+        st.caption("How many days of stock to aim for after ordering. Higher = bigger orders but more cash tied up in inventory.")
         _dos_mode = st.radio("Mode", ["Simple", "Normal", "Advanced"],
                              index=["Simple","Normal","Advanced"].index(st.session_state.get('dos_mode','Normal')),
-                             horizontal=True, key="dos_mode")
+                             horizontal=True, key="dos_mode",
+                             help="Simple: one target for all categories. Normal: set targets per category. Advanced: set targets by size or subcategory within each category.")
 
         def _ni(label, default_key, default_val, col=None):
             _w = col if col else st
