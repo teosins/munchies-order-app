@@ -10,8 +10,8 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 st.set_page_config(page_title="Fillrate", page_icon="📦", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 /* ── global font ── */
 html, body, [class*="css"], .stApp, button, input, select, textarea {
