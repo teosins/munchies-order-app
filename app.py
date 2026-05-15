@@ -1147,14 +1147,19 @@ with st.sidebar:
                    + (f"  |  Shipping deducted: ${shipping_cost:,}" if ship_in_budget and shipping_cost > 0 else ""))
 
         st.markdown("---")
-        st.markdown("**Tier Thresholds** *(weekly units sold)*")
-        st.caption("Items are graded A→D based on weekly velocity.")
+        _th_title, _th_btn = st.columns([2,1])
+        _th_title.markdown("**Tier Thresholds** *(weekly units sold)*")
+        if _th_btn.button("Reset", key="reset_tiers", use_container_width=True):
+            for _k, _v in [('s_tier_a',5),('s_tier_b',2),('s_tier_c',1),('s_tier_d',0.0)]:
+                st.session_state[_k] = _v
+            st.rerun()
+        st.caption("Items are graded A→D based on weekly velocity. Items below D are excluded.")
         _tc1, _tc2 = st.columns(2)
-        tier_a = _tc1.number_input("A — Fast (≥)", value=st.session_state.get('s_tier_a', 5), min_value=1, max_value=99, step=1, key="s_tier_a")
-        tier_b = _tc2.number_input("B — Mid (≥)",  value=st.session_state.get('s_tier_b', 2), min_value=1, max_value=99, step=1, key="s_tier_b")
+        tier_a = _tc1.number_input("A — Fast (≥)",     value=st.session_state.get('s_tier_a', 5),   min_value=1,   max_value=99,  step=1,   key="s_tier_a")
+        tier_b = _tc2.number_input("B — Mid (≥)",       value=st.session_state.get('s_tier_b', 2),   min_value=1,   max_value=99,  step=1,   key="s_tier_b")
         _tc3, _tc4 = st.columns(2)
-        tier_c = _tc3.number_input("C — Slow (≥)", value=st.session_state.get('s_tier_c', 1), min_value=1, max_value=99, step=1, key="s_tier_c")
-        _tc4.markdown(f"<div style='padding-top:28px;font-size:0.8rem;color:#6b7280'>D — Very Slow<br><b style='color:#9ca3af'>&lt; {tier_c}/wk</b></div>", unsafe_allow_html=True)
+        tier_c = _tc3.number_input("C — Slow (≥)",     value=st.session_state.get('s_tier_c', 1),   min_value=1,   max_value=99,  step=1,   key="s_tier_c")
+        tier_d = _tc4.number_input("D — Very Slow (≥)", value=st.session_state.get('s_tier_d', 0.0), min_value=0.0, max_value=99.0, step=0.5, key="s_tier_d", format="%.1f")
 
         st.markdown("---")
         st.markdown("**Delivery Dates**")
@@ -1370,7 +1375,7 @@ merged_raw, ocs_df = load_raw(kova_bytes_raw, ocs_bytes_raw)
 @st.cache_data(show_spinner="Processing your data...")
 def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
             subcat_target=None, cat_size_target=None, cat_adv_modes=None,
-            last_received_cutoff=None, tier_thresholds=(5, 2, 1)):
+            last_received_cutoff=None, tier_thresholds=(5, 2, 1, 0.0)):
     merged = load_raw(kova_bytes, ocs_bytes)[0]
     active = merged[merged['Sales (30 Days)'] > 0].copy()
 
@@ -1393,13 +1398,15 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
     active['Days Left']  = active['Days of Stock Left (30 Days)'].round(1)
     active['Available']  = active['In Stock Qty'] + active['On Order']
 
-    _ta, _tb, _tc = tier_thresholds
+    _ta, _tb, _tc, _td = tier_thresholds
     def assign_tier(w):
-        if w >= _ta:  return 'A'
+        if w >= _ta:   return 'A'
         elif w >= _tb: return 'B'
         elif w >= _tc: return 'C'
-        else:          return 'D'
+        elif w >= _td: return 'D'
+        else:          return None
     active['Tier'] = active['Weekly Vel'].apply(assign_tier)
+    active = active[active['Tier'].notna()].copy()
 
     def calc_order(row):
         tier = row['Tier']; pack = int(row['Pack Size'])
@@ -1462,7 +1469,7 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
 # Serialise LAST_RECEIVED_CUTOFF for cache hashing (tuple keys → "cat||size" strings)
 _lrc_serial = {(f"{k[0]}||{k[1]}" if isinstance(k, tuple) else k): v
                for k, v in LAST_RECEIVED_CUTOFF.items()}
-_TIER_THRESHOLDS = (tier_a, tier_b, tier_c)
+_TIER_THRESHOLDS = (tier_a, tier_b, tier_c, tier_d)
 order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial, _TIER_THRESHOLDS)
 
 def _add_risk(df, lead_time, order_cycle):
@@ -1769,7 +1776,7 @@ with tab1:
 
     # ── tier filter ───────────────────────────────────────────
     st.markdown("### Order Detail")
-    tier_options = [f'A — Fast ({tier_a}+/wk)', f'B — Mid ({tier_b}–{tier_a-1}/wk)', f'C — Slow ({tier_c}–{tier_b-1}/wk)', f'D — Very Slow (<{tier_c}/wk)']
+    tier_options = [f'A — Fast ({tier_a}+/wk)', f'B — Mid ({tier_b}–{tier_a-1}/wk)', f'C — Slow ({tier_c}–{tier_b-1}/wk)', f'D — Very Slow ({tier_d}–{tier_c-1}/wk)']
     tier_map     = {tier_options[0]:'A', tier_options[1]:'B', tier_options[2]:'C', tier_options[3]:'D'}
     selected_labels = st.multiselect(
         "Filter by Tier (select one or more to combine)",
@@ -1886,7 +1893,7 @@ with tab2:
         st.success("✅ Nothing needs restocking right now.")
     else:
         # ── tier filter ───────────────────────────────────────
-        uc_tier_options = [f'A — Fast ({tier_a}+/wk)', f'B — Mid ({tier_b}–{tier_a-1}/wk)', f'C — Slow ({tier_c}–{tier_b-1}/wk)', f'D — Very Slow (<{tier_c}/wk)']
+        uc_tier_options = [f'A — Fast ({tier_a}+/wk)', f'B — Mid ({tier_b}–{tier_a-1}/wk)', f'C — Slow ({tier_c}–{tier_b-1}/wk)', f'D — Very Slow ({tier_d}–{tier_c-1}/wk)']
         uc_tier_map     = {uc_tier_options[0]:'A', uc_tier_options[1]:'B', uc_tier_options[2]:'C', uc_tier_options[3]:'D'}
         uc_selected_labels = st.multiselect(
             "Filter by Tier (select one or more to combine)",
