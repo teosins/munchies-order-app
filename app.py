@@ -1183,6 +1183,18 @@ with st.sidebar:
         st.caption(f"Critical = out before {delivery_date.strftime('%b %d')} ({lead_time_days}d) · At Risk = out before {_next_delivery.strftime('%b %d')} ({order_cycle_days}d)")
 
     with _stab2:
+        st.markdown("**Order Calculation**")
+
+        vel_window = st.radio("Velocity Window", ["30d", "7d", "Blended"],
+                              index=["30d","7d","Blended"].index(st.session_state.get('s_vel_window','Blended')),
+                              horizontal=True, key="s_vel_window",
+                              help="Which sales window to use when calculating how fast items sell.\n\n• 30d — stable average, less reactive to recent spikes\n• 7d — reflects the most recent week, more reactive\n• Blended — 60% weight on last 7 days, 40% on 30 days. Best default for most stores.")
+
+        safety_stock = st.number_input("Safety Stock Buffer (days)", value=st.session_state.get('s_safety_stock', 3),
+                                        min_value=0, max_value=30, step=1, key="s_safety_stock",
+                                        help="Extra days of stock added on top of your target to account for pack size rounding and demand variability. If your target is 14 days but you're consistently landing at 11, set this to 3 to close the gap.")
+
+        st.markdown("---")
         st.markdown("**Target Days of Supply**")
         st.caption("How many days of stock to aim for after ordering. Higher = bigger orders but more cash tied up in inventory.")
         _dos_mode = st.radio("Mode", ["Simple", "Normal", "Advanced"],
@@ -1383,7 +1395,8 @@ merged_raw, ocs_df = load_raw(kova_bytes_raw, ocs_bytes_raw)
 @st.cache_data(show_spinner="Processing your data...")
 def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
             subcat_target=None, cat_size_target=None, cat_adv_modes=None,
-            last_received_cutoff=None, tier_thresholds=(5, 2, 1, 0.0)):
+            last_received_cutoff=None, tier_thresholds=(5, 2, 1, 0.0),
+            safety_stock=0, vel_window='30d'):
     merged = load_raw(kova_bytes, ocs_bytes)[0]
     active = merged[merged['Sales (30 Days)'] > 0].copy()
 
@@ -1401,8 +1414,16 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
             if pd.isna(_lr): return True
             return (_today - pd.Timestamp(_lr).replace(tzinfo=None)).days <= _days
         active = active[active.apply(_keep_row, axis=1)].copy()
-    active['Weekly Vel'] = (active['Sales (30 Days)'] / 4).round(2)
-    active['Daily Vel']  = active['Sales (30 Days)'] / 30
+    # ── velocity window ───────────────────────────────────────
+    _vel7  = active['Sales (7 Days)']  / 7
+    _vel30 = active['Sales (30 Days)'] / 30
+    if vel_window == '7d':
+        active['Daily Vel'] = _vel7
+    elif vel_window == 'blended':
+        active['Daily Vel'] = (_vel7 * 0.6 + _vel30 * 0.4)  # weight recent sales more
+    else:  # '30d' default
+        active['Daily Vel'] = _vel30
+    active['Weekly Vel'] = (active['Daily Vel'] * 7).round(2)
     active['Days Left']  = active['Days of Stock Left (30 Days)'].round(1)
     active['Available']  = active['In Stock Qty'] + active['On Order']
 
@@ -1437,14 +1458,14 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
         else:
             tgt = target.get(cat, 14)
         if tier == 'A':
-            needed = max(0, math.ceil(dv * tgt) - avail)
+            needed = max(0, math.ceil(dv * (tgt + safety_stock)) - avail)
             cases  = math.ceil(needed / pack) if needed > 0 else 0
         elif tier == 'B':
-            if dl >= 10: return 0, 0, tier
-            needed = max(0, math.ceil(dv * 10) - avail)
+            if dl >= 10 + safety_stock: return 0, 0, tier
+            needed = max(0, math.ceil(dv * (10 + safety_stock)) - avail)
             cases  = math.ceil(needed / pack) if needed > 0 else 0
         elif tier == 'C':
-            if dl >= 5 and ins > 0: return 0, 0, tier
+            if dl >= 5 + safety_stock and ins > 0: return 0, 0, tier
             cases = 1
         else:
             if ins > 0 or row['On Order'] > 0: return 0, 0, tier
@@ -1478,7 +1499,8 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
 _lrc_serial = {(f"{k[0]}||{k[1]}" if isinstance(k, tuple) else k): v
                for k, v in LAST_RECEIVED_CUTOFF.items()}
 _TIER_THRESHOLDS = (tier_a, tier_b, tier_c, tier_d)
-order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial, _TIER_THRESHOLDS)
+_VEL_WINDOW_MAP = {'30d':'30d','7d':'7d','Blended':'blended'}
+order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial, _TIER_THRESHOLDS, safety_stock, _VEL_WINDOW_MAP[vel_window])
 
 def _add_risk(df, lead_time, order_cycle):
     if df.empty:
@@ -1894,7 +1916,7 @@ with tab2:
     st.markdown("### 📋 Suggested Order")
     st.caption("All items that need restocking based on velocity — no hard budget cap. Review the total before submitting.")
 
-    uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial, _TIER_THRESHOLDS)
+    uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial, _TIER_THRESHOLDS, safety_stock, _VEL_WINDOW_MAP[vel_window])
     uncapped_df = _add_risk(uncapped_df, lead_time_days, order_cycle_days)
 
     if uncapped_df.empty:
