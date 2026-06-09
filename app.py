@@ -406,7 +406,7 @@ if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
                         </script>""", height=0)
                     st.rerun()
                 except Exception as _e:
-                    st.error("Invalid email or password.")
+                    st.error(f"Login error: {str(_e)}")
     st.stop()
 
 # ── stripe ────────────────────────────────────────────────────
