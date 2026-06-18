@@ -2271,11 +2271,218 @@ with tab3:
             st.markdown(f"**{CAT_EMOJIS[cat]} {cat}**")
             cat_pivot_gaps[cat] = show_size_strain_grid(cat, sizes)
 
+    # ── menu export ───────────────────────────────────────────
+    def build_menu_workbook(_suggestions):
+        wb = Workbook()
+        PINK_FILL2  = _p('FFC7CE')
+        GREEN_FILL2 = _p('C6EFCE')
+
+        # ── Sheet 1: Shelf vs Target ──────────────────────────
+        ws1 = wb.active
+        ws1.title = "Shelf vs Target"
+        _ncols = 1 + len(STRAINS) * 3
+        _col_letter = ws1.cell(row=1, column=_ncols).column_letter
+
+        # Title row
+        _tc = ws1.cell(row=1, column=1, value="Menu Builder — Shelf vs Target")
+        _tc.font = Font(color='FFFFFF', bold=True, size=13)
+        _tc.fill = _p('0F2A3D')
+        _tc.alignment = _a('center')
+        ws1.merge_cells(start_row=1, start_column=1, end_row=1, end_column=_ncols)
+        _dc = ws1.cell(row=2, column=1, value=f"Generated: {today2.strftime('%B %d, %Y')}")
+        _dc.font = Font(color='808080', size=9, italic=True)
+        _dc.alignment = _a('right')
+        ws1.merge_cells(start_row=2, start_column=1, end_row=2, end_column=_ncols)
+        ws1.column_dimensions['A'].width = 16
+        for _ci in range(2, _ncols + 1):
+            ws1.column_dimensions[ws1.cell(row=1, column=_ci).column_letter].width = 12
+
+        def _write_grid(ws, start_row, label, sizes, shelf_data, target_data, is_subcat=False):
+            r = start_row
+            # Section header
+            _hc = ws.cell(row=r, column=1, value=label)
+            _hc.font = Font(color='FFFFFF', bold=True, size=11)
+            _hc.fill = _p('2E75B6') if is_subcat else _p('1F4E79')
+            _hc.alignment = _a('center')
+            _hc.border = BORDER
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_ncols)
+            r += 1
+            # Group headers
+            ws.cell(row=r, column=1, value='Size').font = Font(bold=True, size=9)
+            ws.cell(row=r, column=1).fill = _p('D9D9D9')
+            ws.cell(row=r, column=1).alignment = _a('center')
+            ws.cell(row=r, column=1).border = BORDER
+            for _gi, (_gc, _glabel, _gfill) in enumerate([
+                (2, 'On Shelf Now', _p('2167A0')),
+                (2+len(STRAINS), 'Target SKUs', _p('375623')),
+                (2+len(STRAINS)*2, 'Gap (to order)', _p('843C0C')),
+            ]):
+                _ghc = ws.cell(row=r, column=_gc, value=_glabel)
+                _ghc.font = Font(color='FFFFFF', bold=True, size=9)
+                _ghc.fill = _gfill
+                _ghc.alignment = _a('center')
+                _ghc.border = BORDER
+                ws.merge_cells(start_row=r, start_column=_gc, end_row=r, end_column=_gc+len(STRAINS)-1)
+            r += 1
+            # Strain sub-headers
+            ws.cell(row=r, column=1, value='').border = BORDER
+            ws.cell(row=r, column=1).fill = _p('D9D9D9')
+            for _gs in [2, 2+len(STRAINS), 2+len(STRAINS)*2]:
+                for _si, _sn in enumerate(STRAINS):
+                    _shc = ws.cell(row=r, column=_gs+_si, value=_sn)
+                    _shc.font = Font(bold=True, size=9)
+                    _shc.alignment = _a('center')
+                    _shc.border = BORDER
+                    _shc.fill = _p('F2F2F2')
+            r += 1
+            # Data rows
+            for size in sizes:
+                ws.cell(row=r, column=1, value=size).font = Font(bold=True, size=10)
+                ws.cell(row=r, column=1).alignment = _a('center')
+                ws.cell(row=r, column=1).border = BORDER
+                ws.cell(row=r, column=1).fill = _p('EBEBEB')
+                for _si, _sn in enumerate(STRAINS):
+                    sv = int(shelf_data.get((size, _sn), 0))
+                    tv = int(target_data.get((size, _sn), 0))
+                    gv = max(0, tv - sv)
+                    _sc2 = ws.cell(row=r, column=2+_si, value=sv)
+                    _sc2.alignment = _a('center'); _sc2.border = BORDER; _sc2.fill = _p('EBF3FB')
+                    _tc2 = ws.cell(row=r, column=2+len(STRAINS)+_si, value=tv)
+                    _tc2.alignment = _a('center'); _tc2.border = BORDER
+                    _tc2.fill = _p('EBF7E6') if tv > 0 else _p('F2F2F2')
+                    _gc2 = ws.cell(row=r, column=2+len(STRAINS)*2+_si, value=gv)
+                    _gc2.alignment = _a('center'); _gc2.border = BORDER
+                    _gc2.fill = PINK_FILL2 if gv > 0 else GREEN_FILL2
+                    if gv > 0: _gc2.font = Font(bold=True, color='9C0006', size=10)
+                r += 1
+            # Totals row
+            ws.cell(row=r, column=1, value='TOTAL GAP').fill = HDR_FILL
+            ws.cell(row=r, column=1).font = HDR_FONT
+            ws.cell(row=r, column=1).alignment = _a('center')
+            ws.cell(row=r, column=1).border = BORDER
+            for _si, _sn in enumerate(STRAINS):
+                ws.cell(row=r, column=2+_si, value='').border = BORDER; ws.cell(row=r, column=2+_si).fill = HDR_FILL
+                ws.cell(row=r, column=2+len(STRAINS)+_si, value='').border = BORDER; ws.cell(row=r, column=2+len(STRAINS)+_si).fill = HDR_FILL
+                _col_g = sum(max(0, int(target_data.get((s, _sn), 0)) - int(shelf_data.get((s, _sn), 0))) for s in sizes)
+                _gc3 = ws.cell(row=r, column=2+len(STRAINS)*2+_si, value=_col_g)
+                _gc3.alignment = _a('center'); _gc3.border = BORDER
+                _gc3.fill = PINK_FILL2 if _col_g > 0 else GREEN_FILL2
+                if _col_g > 0: _gc3.font = Font(bold=True, color='9C0006', size=10)
+            return r + 2
+
+        ws1_row = 3
+        for _cat in ALL_CATS:
+            _emoji = CAT_EMOJIS.get(_cat, '')
+            _subcats = subcat_map.get(_cat, [])
+            if _subcats:
+                if not any(mb_subcat_targets.get((_cat, _sc, _s, _st), 0) > 0
+                           for _sc in _subcats for _s in subcat_sizes.get((_cat, _sc), []) for _st in STRAINS):
+                    continue
+                _ch = ws1.cell(row=ws1_row, column=1, value=f"{_emoji} {_cat}")
+                _ch.font = Font(color='FFFFFF', bold=True, size=12)
+                _ch.fill = _p('0D3B66')
+                _ch.alignment = _a('center')
+                _ch.border = BORDER
+                ws1.merge_cells(start_row=ws1_row, start_column=1, end_row=ws1_row, end_column=_ncols)
+                ws1_row += 1
+                for _sc in _subcats:
+                    _sc_sizes = subcat_sizes.get((_cat, _sc), [])
+                    if not _sc_sizes: continue
+                    if not any(mb_subcat_targets.get((_cat, _sc, _s, _st), 0) > 0 for _s in _sc_sizes for _st in STRAINS):
+                        continue
+                    _sd = {}
+                    for _s in _sc_sizes:
+                        for _st in STRAINS:
+                            _sv = int(subcat_shelf[
+                                (subcat_shelf['Category']==_cat) & (subcat_shelf['Sub-Category']==_sc) &
+                                (subcat_shelf['Size']==_s) & (subcat_shelf['Strain']==_st)
+                            ]['On Shelf'].sum()) if not subcat_shelf.empty else 0
+                            _sd[(_s, _st)] = _sv + _cart_subcat_boost.get((_cat, _sc, _s, _st), 0)
+                    _td = {(_s, _st): mb_subcat_targets.get((_cat, _sc, _s, _st), 0) for _s in _sc_sizes for _st in STRAINS}
+                    ws1_row = _write_grid(ws1, ws1_row, f"🔹 {_sc}", _sc_sizes, _sd, _td, is_subcat=True)
+            else:
+                _sizes = cat_sizes[_cat]
+                if not _sizes: continue
+                if not any(mb_targets.get((_cat, _s, _st), 0) > 0 for _s in _sizes for _st in STRAINS): continue
+                _sd = {}
+                for _s in _sizes:
+                    for _st in STRAINS:
+                        _sv = int(shelf_counts[
+                            (shelf_counts['Category']==_cat) & (shelf_counts['Size']==_s) & (shelf_counts['Strain']==_st)
+                        ]['On Shelf'].sum()) + _cart_boost.get((_cat, _s, _st), 0)
+                        _sd[(_s, _st)] = _sv
+                _td = {(_s, _st): mb_targets.get((_cat, _s, _st), 0) for _s in _sizes for _st in STRAINS}
+                ws1_row = _write_grid(ws1, ws1_row, f"{_emoji} {_cat}", _sizes, _sd, _td)
+
+        # ── Sheet 2: Gap Suggestions ──────────────────────────
+        ws2 = wb.create_sheet("Gap Suggestions")
+        _sug_hdrs = ['Product','Category','Sub-Type','Size','Strain','OCS Variant #','OCS Item #',
+                     'Prev. Sold (60d)','Cases','Unit Price','Est. Cost','Status']
+        _sug_ws   = [45, 14, 14, 10, 10, 18, 14, 18, 8, 12, 12, 22]
+        _t2 = ws2.cell(row=1, column=1, value="Gap Suggestions — SKUs to Order")
+        _t2.font = Font(color='FFFFFF', bold=True, size=13)
+        _t2.fill = _p('0F2A3D')
+        _t2.alignment = _a('center')
+        ws2.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(_sug_hdrs))
+        _d2 = ws2.cell(row=2, column=1, value=f"Generated: {today2.strftime('%B %d, %Y')}")
+        _d2.font = Font(color='808080', size=9, italic=True)
+        _d2.alignment = _a('right')
+        ws2.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(_sug_hdrs))
+        for _ci, (_hdr, _w) in enumerate(zip(_sug_hdrs, _sug_ws), start=1):
+            _hc2 = ws2.cell(row=4, column=_ci, value=_hdr)
+            _hc2.font = HDR_FONT; _hc2.fill = HDR_FILL
+            _hc2.alignment = _a('center'); _hc2.border = BORDER
+            ws2.column_dimensions[_hc2.column_letter].width = _w
+        ws2.freeze_panes = 'A5'
+        _sug_row = 5
+        for _sg in _suggestions:
+            _up  = _sg.get('Unit Price') or 0
+            _est = _sg['Cases'] * _sg['Pack Size'] * _up if _up else 0
+            _status = 'NEW — never ordered' if _sg.get('Is New') else 'Previously carried'
+            _vals = [_sg['Product'], _sg['Category'], _sg.get('Sub-Type',''), _sg['Size'], _sg['Strain'],
+                     _sg['OCS Variant #'], _sg['OCS Item #'], _sg.get('Prev. Sold (60d)', 0),
+                     _sg['Cases'], _up if _up else None, _est if _est else None, _status]
+            _rfill = _p('FFF8E1') if _sg.get('Is New') else _p('F0F8FF')
+            for _ci, _val in enumerate(_vals, start=1):
+                _rc2 = ws2.cell(row=_sug_row, column=_ci, value=_val)
+                _rc2.fill = _rfill; _rc2.border = BORDER
+                _rc2.alignment = _a('center' if _ci >= 8 else 'left')
+                if _ci == 10 and _val: _rc2.number_format = '$#,##0.00'
+                if _ci == 11 and _val: _rc2.number_format = '$#,##0.00'; _rc2.font = Font(bold=True, size=10)
+            _sug_row += 1
+        if _suggestions:
+            _tot_est = sum((_sg['Cases'] * _sg['Pack Size'] * (_sg.get('Unit Price') or 0)) for _sg in _suggestions)
+            _tr = ws2.cell(row=_sug_row, column=1, value='TOTAL')
+            _tr.font = HDR_FONT; _tr.fill = HDR_FILL; _tr.border = BORDER
+            for _ci in range(2, len(_sug_hdrs)+1):
+                ws2.cell(row=_sug_row, column=_ci).fill = HDR_FILL
+                ws2.cell(row=_sug_row, column=_ci).border = BORDER
+            _tot_c = ws2.cell(row=_sug_row, column=11, value=_tot_est)
+            _tot_c.font = Font(color='FFFFFF', bold=True, size=10)
+            _tot_c.fill = HDR_FILL; _tot_c.alignment = _a('center')
+            _tot_c.number_format = '$#,##0.00'; _tot_c.border = BORDER
+        elif not _suggestions:
+            ws2.cell(row=5, column=1, value='No gaps found — shelf is fully stocked to target.').font = Font(italic=True, color='808080', size=10)
+
+        _buf = io.BytesIO()
+        wb.save(_buf)
+        _buf.seek(0)
+        return _buf
+
     # ── suggestions ───────────────────────────────────────────
     total_gaps = (sum(int(pg.values.sum()) for pg in cat_pivot_gaps.values()) +
                   sum(int(pg.values.sum()) for pg in subcat_gaps.values()))
+    suggestions = []
     if not cat_pivot_gaps and not subcat_gaps or total_gaps == 0:
         st.success("✅ Your shelf is fully stocked to target across all categories!")
+        if cat_pivot_gaps or subcat_gaps:
+            _mb_buf = build_menu_workbook([])
+            st.download_button(
+                "📥 Download Menu Report (.xlsx)",
+                data=_mb_buf,
+                file_name=f'MenuReport_{today2.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
     else:
         st.markdown("---")
         st.markdown("#### 💡 Suggested SKUs to Fill Gaps")
@@ -2430,6 +2637,17 @@ with tab3:
                     st.rerun()
         else:
             st.info("No matching SKUs found in the OCS catalogue to fill the gaps. Try adjusting your targets or check the catalogue for availability.")
+
+        # ── menu report download ───────────────────────────────
+        st.markdown("---")
+        _mb_buf = build_menu_workbook(suggestions)
+        st.download_button(
+            "📥 Download Menu Report (.xlsx)",
+            data=_mb_buf,
+            file_name=f'MenuReport_{today2.strftime("%Y%m%d")}.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            help="Download a formatted Excel report with your Shelf vs Target grids and Gap Suggestions list.",
+        )
 
         # ── menu cart ──────────────────────────────────────────
         _cart = st.session_state.get('menu_cart', {})
