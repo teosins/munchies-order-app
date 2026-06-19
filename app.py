@@ -1384,7 +1384,7 @@ if not kova_file or not ocs_file:
     """)
     st.stop()
 
-tab1, tab2, tab3 = st.tabs(["📦 Replenishment Order", "📋 Suggested Order", "🗂️ Menu Builder"])
+tab1, tab2, tab3, tab4 = st.tabs(["📦 Replenishment Order", "📋 Suggested Order", "🗂️ Menu Builder", "🧠 AI Menu"])
 
 
 kova_bytes_raw = kova_file.getvalue()
@@ -2739,3 +2739,307 @@ with tab3:
             )
         else:
             st.info("No order items yet — upload your files and set targets to generate an order.")
+
+# ══════════════════════════════════════════════════════════════════════════
+# TAB 4 — AI MENU OPTIMIZER
+# ══════════════════════════════════════════════════════════════════════════
+with tab4:
+    import plotly.graph_objects as _go4
+
+    _AM_CATS = ['Flower','Pre-Roll','Vapes','Edibles','Concentrates','Beverages','Capsules','Oil','Topicals','Seeds']
+    _today4  = date.today()
+
+    st.markdown("### 🧠 AI Menu Optimizer")
+    st.caption(
+        "Builds your ideal carried menu automatically — picks the highest-velocity SKUs "
+        "while ensuring balanced coverage across categories, sizes, and strains."
+    )
+
+    if all_active.empty:
+        st.info("Upload your Cova and OCS files to generate an AI-optimized menu.")
+    else:
+        # ── controls ──────────────────────────────────────────────────────
+        _am_col1, _am_col2, _am_col3, _am_col4 = st.columns([1, 1.2, 1, 2])
+        with _am_col1:
+            _am_n = st.number_input(
+                "Target SKUs", min_value=10, max_value=2000, value=150, step=10,
+                help="How many unique SKUs you want to carry on your menu."
+            )
+        with _am_col2:
+            _am_mode = st.selectbox(
+                "Selection mode",
+                ["Velocity + Coverage", "Pure Velocity", "Revenue-weighted"],
+                help=(
+                    "**Velocity + Coverage** — fills proportional minimums per category first, "
+                    "then tops up with highest-velocity SKUs across all categories.\n\n"
+                    "**Pure Velocity** — strictly the top-N fastest movers, no category floor.\n\n"
+                    "**Revenue-weighted** — ranks by daily velocity × unit price (highest revenue per day first)."
+                )
+            )
+        with _am_col3:
+            _am_tiers = st.multiselect(
+                "Tiers to include", ['A','B','C','D'], default=['A','B','C'],
+                help="Tier A = fastest movers, D = very slow. Typically exclude D for your core menu."
+            )
+        with _am_col4:
+            _am_cats = st.multiselect(
+                "Categories", _AM_CATS, default=_AM_CATS,
+                label_visibility="visible"
+            )
+
+        # ── filter pool ───────────────────────────────────────────────────
+        _am_pool = all_active[
+            all_active['Classification'].isin(_am_cats) &
+            all_active['Tier'].isin(_am_tiers)
+        ].copy()
+
+        if _am_pool.empty:
+            st.warning("No active SKUs match the selected filters. Try including more categories or tiers.")
+        else:
+            # ── score ─────────────────────────────────────────────────────
+            if _am_mode == "Revenue-weighted":
+                _am_pool['_score'] = _am_pool['Daily Vel'] * _am_pool.get('Unit Price', pd.Series(0, index=_am_pool.index)).fillna(0)
+            else:
+                _am_pool['_score'] = _am_pool['Daily Vel']
+
+            _am_pool = _am_pool.sort_values('_score', ascending=False).reset_index(drop=True)
+
+            # ── selection ─────────────────────────────────────────────────
+            _n = min(_am_n, len(_am_pool))
+
+            if _am_mode == "Velocity + Coverage":
+                _cat_vel   = _am_pool.groupby('Classification')['_score'].sum()
+                _cat_share = (_cat_vel / _cat_vel.sum()).fillna(0)
+                _cat_min   = (_cat_share * _n).round().astype(int).clip(lower=1)
+                # fix rounding drift
+                _drift = _n - int(_cat_min.sum())
+                for _cn in (_cat_vel.sort_values(ascending=False).index if _drift > 0
+                             else _cat_vel.sort_values(ascending=True).index):
+                    if _drift == 0: break
+                    _cat_min[_cn] += (1 if _drift > 0 else -1)
+                    if _cat_min[_cn] < 1: _cat_min[_cn] = 1
+                    _drift += (-1 if _drift > 0 else 1)
+
+                _sel_skus = set()
+                _sel_rows = []
+                for _cn, _mn in _cat_min.items():
+                    for _, _r in _am_pool[_am_pool['Classification'] == _cn].head(_mn).iterrows():
+                        if _r['Supplier Sku'] not in _sel_skus:
+                            _sel_skus.add(_r['Supplier Sku'])
+                            _sel_rows.append(_r)
+                _rem = _n - len(_sel_rows)
+                if _rem > 0:
+                    for _, _r in _am_pool.iterrows():
+                        if _rem <= 0: break
+                        if _r['Supplier Sku'] not in _sel_skus:
+                            _sel_skus.add(_r['Supplier Sku'])
+                            _sel_rows.append(_r)
+                            _rem -= 1
+                _am_menu = pd.DataFrame(_sel_rows).sort_values('_score', ascending=False).reset_index(drop=True)
+            else:
+                _am_menu = _am_pool.head(_n).copy().reset_index(drop=True)
+
+            # ── status column ─────────────────────────────────────────────
+            _am_menu['Status'] = _am_menu['In Stock Qty'].apply(
+                lambda x: 'On Shelf' if x > 0 else 'Order Now'
+            )
+
+            # ── summary metrics ───────────────────────────────────────────
+            _am_on   = int((_am_menu['In Stock Qty'] > 0).sum())
+            _am_off  = len(_am_menu) - _am_on
+            _am_vel  = _am_menu['Daily Vel'].mean()
+            _am_wku  = _am_menu['Daily Vel'].sum() * 7
+            _am_cats_n = _am_menu['Classification'].nunique()
+
+            st.markdown("---")
+            _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
+            _mc1.metric("Recommended SKUs", f"{len(_am_menu)}")
+            _mc2.metric("Already on Shelf",  f"{_am_on}")
+            _mc3.metric("Need to Order",      f"{_am_off}",
+                        delta=f"-{_am_off} gaps" if _am_off else None,
+                        delta_color="inverse")
+            _mc4.metric("Categories Covered", f"{_am_cats_n}")
+            _mc5.metric("Est. Weekly Units",   f"{_am_wku:,.0f}")
+
+            st.markdown("---")
+
+            # ── category bar chart ────────────────────────────────────────
+            _cs = _am_menu.groupby('Classification').agg(
+                SKUs=('Supplier Sku','count'),
+                On_Shelf=('In Stock Qty', lambda x: (x > 0).sum()),
+                Total_Vel=('Daily Vel','sum'),
+            ).reset_index()
+            _cs['Order_Now'] = _cs['SKUs'] - _cs['On_Shelf']
+            _cs = _cs.sort_values('Total_Vel', ascending=False)
+
+            _fig_bar = _go4.Figure()
+            _fig_bar.add_bar(x=_cs['Classification'], y=_cs['On_Shelf'],
+                             name='On Shelf', marker_color='#3fb950')
+            _fig_bar.add_bar(x=_cs['Classification'], y=_cs['Order_Now'],
+                             name='Order Now', marker_color='#f85149')
+            _fig_bar.update_layout(
+                barmode='stack', title='Recommended SKUs by Category',
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#c9d1d9', size=11),
+                legend=dict(orientation='h', y=-0.25),
+                margin=dict(t=40, b=50, l=0, r=0), height=270,
+                xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                yaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+            )
+            st.plotly_chart(_fig_bar, use_container_width=True)
+
+            # ── velocity heatmap (category × size) ────────────────────────
+            _hm = (_am_menu.groupby(['Classification','Product Size'])['Daily Vel']
+                   .sum().reset_index())
+            if not _hm.empty:
+                _hm_piv = _hm.pivot_table(
+                    index='Product Size', columns='Classification',
+                    values='Daily Vel', fill_value=0
+                )
+                # sort sizes by the sort_size_key logic if available
+                try:
+                    import re as _re4
+                    def _ssk4(s):
+                        m = _re4.match(r'^(\d+)x(\d+\.?\d*)g?$', str(s))
+                        if m: return (0, int(m.group(1)), float(m.group(2)))
+                        m = _re4.match(r'^(\d+\.?\d*)g$', str(s))
+                        if m: return (1, 0, float(m.group(1)))
+                        m = _re4.match(r'^(\d+\.?\d*)ml$', str(s))
+                        if m: return (2, 0, float(m.group(1)))
+                        m = _re4.match(r'^(\d+\.?\d*)mg$', str(s))
+                        if m: return (3, 0, float(m.group(1)))
+                        return (99, 0, 0)
+                    _hm_piv = _hm_piv.reindex(sorted(_hm_piv.index, key=_ssk4))
+                except Exception:
+                    pass
+
+                _fig_hm = _go4.Figure(data=_go4.Heatmap(
+                    z=_hm_piv.values,
+                    x=_hm_piv.columns.tolist(),
+                    y=_hm_piv.index.tolist(),
+                    colorscale=[[0,'#0d1117'],[0.3,'#1f4e79'],[0.7,'#2e75b6'],[1,'#89d4f5']],
+                    showscale=True,
+                    hovertemplate='%{y} · %{x}<br>Total Daily Vel: %{z:.2f}<extra></extra>',
+                ))
+                _fig_hm.update_layout(
+                    title='Velocity Heat Map — Where the Sales Are (Category × Size)',
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#c9d1d9', size=10),
+                    margin=dict(t=45, b=20, l=80, r=20), height=380,
+                )
+                st.plotly_chart(_fig_hm, use_container_width=True)
+
+            # ── tier distribution donut ───────────────────────────────────
+            _tier_counts = _am_menu['Tier'].value_counts().reindex(['A','B','C','D']).fillna(0)
+            _tier_colors = {'A':'#3fb950','B':'#89d4f5','C':'#ffc83c','D':'#f85149'}
+            _fig_pie = _go4.Figure(data=_go4.Pie(
+                labels=[f'Tier {t}' for t in _tier_counts.index],
+                values=_tier_counts.values,
+                hole=0.55,
+                marker_colors=[_tier_colors.get(t,'#888') for t in _tier_counts.index],
+                textinfo='label+percent',
+                hovertemplate='%{label}: %{value} SKUs<extra></extra>',
+            ))
+            _fig_pie.update_layout(
+                title='Tier Mix of Recommended Menu',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#c9d1d9', size=11),
+                margin=dict(t=40, b=10, l=0, r=0),
+                height=260,
+                showlegend=False,
+            )
+            _fig_pie_col, _ = st.columns([1, 2])
+            _fig_pie_col.plotly_chart(_fig_pie, use_container_width=True)
+
+            st.markdown("---")
+
+            # ── full recommended menu table ───────────────────────────────
+            st.markdown("#### 🏆 Recommended Menu — Full List")
+            _disp_c = [c for c in ['Product','Classification','Product Size','Strain','Tier',
+                                    'Weekly Vel','Daily Vel','In Stock Qty','Status']
+                       if c in _am_menu.columns]
+            _am_disp = _am_menu[_disp_c].copy().rename(
+                columns={'Classification':'Category','Product Size':'Size',
+                         'In Stock Qty':'On Shelf'}
+            )
+            _am_disp['Daily Vel']  = _am_disp['Daily Vel'].round(3)
+            _am_disp['Weekly Vel'] = _am_disp['Weekly Vel'].round(2)
+            st.dataframe(
+                _am_disp,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    'Status':     st.column_config.TextColumn('Status', width='small'),
+                    'Tier':       st.column_config.TextColumn('Tier',   width='small'),
+                    'Daily Vel':  st.column_config.NumberColumn('Daily Vel',  format='%.3f'),
+                    'Weekly Vel': st.column_config.NumberColumn('Weekly Vel', format='%.2f'),
+                    'On Shelf':   st.column_config.NumberColumn('On Shelf',   format='%d'),
+                }
+            )
+
+            # ── gaps to order ─────────────────────────────────────────────
+            _am_gaps = _am_menu[_am_menu['In Stock Qty'] == 0].copy()
+            if not _am_gaps.empty:
+                st.markdown("---")
+                st.markdown(f"#### 📦 {len(_am_gaps)} Missing SKUs — Order to Complete Your Menu")
+                st.caption(
+                    "These are top performers that belong on your menu but aren't currently on your shelf. "
+                    "Sorted by velocity — the top of this list is your biggest missed opportunity."
+                )
+                _gap_c = [c for c in ['Product','Classification','Product Size','Strain','Tier',
+                                       'Weekly Vel','Daily Vel','Unit Price','Pack Size']
+                          if c in _am_gaps.columns]
+                _gap_disp = _am_gaps[_gap_c].copy().rename(
+                    columns={'Classification':'Category','Product Size':'Size'}
+                )
+                if 'Unit Price' in _gap_disp.columns and 'Pack Size' in _gap_disp.columns:
+                    _gap_disp['Est. Case Cost'] = (
+                        _gap_disp['Pack Size'] * _gap_disp['Unit Price'].fillna(0)
+                    ).round(2)
+                    _gap_disp = _gap_disp.drop(columns=['Pack Size'])
+                _gap_disp['Daily Vel']  = _gap_disp['Daily Vel'].round(3)
+                _gap_disp['Weekly Vel'] = _gap_disp['Weekly Vel'].round(2)
+                st.dataframe(
+                    _gap_disp,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        'Tier':           st.column_config.TextColumn('Tier', width='small'),
+                        'Daily Vel':      st.column_config.NumberColumn('Daily Vel',      format='%.3f'),
+                        'Weekly Vel':     st.column_config.NumberColumn('Weekly Vel',     format='%.2f'),
+                        'Unit Price':     st.column_config.NumberColumn('Unit Price',     format='$%.2f'),
+                        'Est. Case Cost': st.column_config.NumberColumn('Est. Case Cost', format='$%.2f'),
+                    }
+                )
+
+            # ── download ──────────────────────────────────────────────────
+            st.markdown("---")
+            _ai_buf = io.BytesIO()
+            with pd.ExcelWriter(_ai_buf, engine='openpyxl') as _aiw:
+                _exp_cols = [c for c in ['Product','Classification','Product Size','Strain','Tier',
+                                          'Weekly Vel','Daily Vel','In Stock Qty','Unit Price','Supplier Sku','Status']
+                             if c in _am_menu.columns]
+                _am_menu[_exp_cols].rename(
+                    columns={'Classification':'Category','Product Size':'Size','In Stock Qty':'On Shelf'}
+                ).to_excel(_aiw, sheet_name='AI Recommended Menu', index=False)
+
+                if not _am_gaps.empty:
+                    _gap_exp = [c for c in ['Product','Classification','Product Size','Strain','Tier',
+                                             'Weekly Vel','Daily Vel','Unit Price','Pack Size','Supplier Sku']
+                                if c in _am_gaps.columns]
+                    _am_gaps[_gap_exp].rename(
+                        columns={'Classification':'Category','Product Size':'Size'}
+                    ).to_excel(_aiw, sheet_name='Order to Complete Menu', index=False)
+
+                _cs.rename(columns={'On_Shelf':'On Shelf','Order_Now':'Order Now',
+                                    'Total_Vel':'Total Daily Vel'}).to_excel(
+                    _aiw, sheet_name='Category Breakdown', index=False)
+            _ai_buf.seek(0)
+            st.download_button(
+                "📥 Download AI Menu Report (.xlsx)",
+                data=_ai_buf,
+                file_name=f'AIMenu_{_today4.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+                help="Full recommended menu, missing SKUs to order, and category breakdown — three sheets.",
+            )
