@@ -2840,35 +2840,62 @@ with tab4:
                 _am_menu = _am_pool.head(_n).copy().reset_index(drop=True)
 
             # ── status column ─────────────────────────────────────────────
-            _am_menu['Status'] = _am_menu['In Stock Qty'].apply(
-                lambda x: 'On Shelf' if x > 0 else 'Order Now'
-            )
+            # ── status: flag not-stocked AND at-risk items ────────────────
+            def _am_status(row):
+                if row['In Stock Qty'] == 0:
+                    return 'Not Stocked'
+                if row.get('Risk') in ('Critical', 'At Risk'):
+                    return f"⚠️ {row.get('Risk','At Risk')} — Reorder"
+                return 'On Shelf'
+            _am_menu['Status'] = _am_menu.apply(_am_status, axis=1)
 
-            # ── pre-compute gaps + costs (needed for metrics + table) ────────
-            _am_gaps_early = _am_menu[_am_menu['In Stock Qty'] == 0].copy()
-            _am_gaps_early['Cases'] = 1
+            # ── pre-compute all items that need to be ordered ─────────────
+            # Build a lookup: Supplier Sku → Cases from the replenishment order
+            _rep_cases = {}
+            if not order_df.empty and 'Supplier Sku' in order_df.columns and 'Cases' in order_df.columns:
+                _rep_cases = dict(zip(order_df['Supplier Sku'], order_df['Cases']))
+
+            # Not on shelf → 1 case (menu gap)
+            _not_stocked = _am_menu[_am_menu['In Stock Qty'] == 0].copy()
+            _not_stocked['Cases']  = 1
+            _not_stocked['Reason'] = 'Not on shelf'
+
+            # On shelf but at risk of selling out → use replenishment cases if calculated
+            _at_risk = _am_menu[
+                (_am_menu['In Stock Qty'] > 0) &
+                (_am_menu.get('Risk', pd.Series('', index=_am_menu.index)).isin(['Critical','At Risk']))
+            ].copy() if 'Risk' in _am_menu.columns else pd.DataFrame()
+            if not _at_risk.empty:
+                _at_risk['Cases']  = _at_risk['Supplier Sku'].map(_rep_cases).fillna(1).astype(int).clip(lower=1)
+                _at_risk['Reason'] = _at_risk['Risk'].apply(lambda r: f'Selling out ({r})')
+
+            _am_gaps_early = pd.concat([_not_stocked, _at_risk], ignore_index=True) if not _at_risk.empty else _not_stocked.copy()
+
             if 'Unit Price' in _am_gaps_early.columns and 'Pack Size' in _am_gaps_early.columns:
                 _am_gaps_early['Est. Case Cost'] = (
-                    _am_gaps_early['Pack Size'] * _am_gaps_early['Unit Price'].fillna(0)
+                    _am_gaps_early['Pack Size'] * _am_gaps_early['Cases'] * _am_gaps_early['Unit Price'].fillna(0)
                 ).round(2)
             else:
                 _am_gaps_early['Est. Case Cost'] = 0.0
             _am_order_cost = _am_gaps_early['Est. Case Cost'].sum()
 
             # ── summary metrics ───────────────────────────────────────────
-            _am_on   = int((_am_menu['In Stock Qty'] > 0).sum())
-            _am_off  = len(_am_menu) - _am_on
-            _am_wku  = _am_menu['Daily Vel'].sum() * 7
-            _am_cats_n = _am_menu['Classification'].nunique()
+            _am_on      = int((_am_menu['In Stock Qty'] > 0).sum())
+            _am_off     = int((_am_menu['In Stock Qty'] == 0).sum())
+            _am_atrisk  = len(_am_gaps_early) - _am_off   # on shelf but selling out
+            _am_wku     = _am_menu['Daily Vel'].sum() * 7
+            _am_cats_n  = _am_menu['Classification'].nunique()
 
             st.markdown("---")
             _mc1, _mc2, _mc3, _mc4, _mc5, _mc6 = st.columns(6)
             _mc1.metric("Recommended SKUs",  f"{len(_am_menu)}")
-            _mc2.metric("Already on Shelf",  f"{_am_on}")
-            _mc3.metric("Need to Order",     f"{_am_off}")
-            _mc4.metric("Categories",        f"{_am_cats_n}")
-            _mc5.metric("Est. Weekly Units", f"{_am_wku:,.0f}")
-            _mc6.metric("Est. Order Cost",   f"${_am_order_cost:,.2f}")
+            _mc2.metric("On Shelf — Safe",   f"{_am_on - _am_atrisk}")
+            _mc3.metric("Selling Out",        f"{_am_atrisk}",
+                        delta=f"{_am_atrisk} at risk" if _am_atrisk else None,
+                        delta_color="inverse")
+            _mc4.metric("Not Stocked",        f"{_am_off}")
+            _mc5.metric("Est. Weekly Units",  f"{_am_wku:,.0f}")
+            _mc6.metric("Est. Order Cost",    f"${_am_order_cost:,.2f}")
 
             st.markdown("---")
 
@@ -3013,33 +3040,41 @@ with tab4:
                 }
             )
 
-            # ── gaps to order ─────────────────────────────────────────────
+            # ── items to order (not stocked + selling out) ────────────────
             _am_gaps = _am_gaps_early  # already computed above
             if not _am_gaps.empty:
                 st.markdown("---")
-                st.markdown(f"#### 📦 {len(_am_gaps)} Missing SKUs — Order to Complete Your Menu")
+                _n_ns  = int((_am_gaps['Reason'] == 'Not on shelf').sum()) if 'Reason' in _am_gaps.columns else len(_am_gaps)
+                _n_ar  = len(_am_gaps) - _n_ns
+                _hdr   = f"#### 📦 {len(_am_gaps)} SKUs to Order"
+                if _n_ar > 0:
+                    _hdr += f" — {_n_ns} not stocked · {_n_ar} selling out"
+                st.markdown(_hdr)
                 st.caption(
-                    "These top performers belong on your menu but aren't currently on your shelf. "
-                    "Sorted by velocity — the top of this list is your biggest missed opportunity."
+                    "**Not on shelf** — missing from your menu entirely. "
+                    "**Selling out** — currently on shelf but will be gone before next OCS delivery."
                 )
                 _gap_c = [c for c in ['Product','Classification','Product Size','Strain','Tier',
-                                       'Weekly Vel','Daily Vel','Cases','Unit Price','Est. Case Cost']
+                                       'Reason','Net Days','Weekly Vel','Daily Vel','Cases','Est. Case Cost']
                           if c in _am_gaps.columns]
                 _gap_disp = _am_gaps[_gap_c].copy().rename(
-                    columns={'Classification':'Category','Product Size':'Size'}
+                    columns={'Classification':'Category','Product Size':'Size','Net Days':'Days Left'}
                 )
                 _gap_disp['Daily Vel']  = _gap_disp['Daily Vel'].round(3)
                 _gap_disp['Weekly Vel'] = _gap_disp['Weekly Vel'].round(2)
+                if 'Days Left' in _gap_disp.columns:
+                    _gap_disp['Days Left'] = _gap_disp['Days Left'].round(1)
                 st.dataframe(
                     _gap_disp,
                     hide_index=True,
                     use_container_width=True,
                     column_config={
-                        'Tier':           st.column_config.TextColumn('Tier',   width='small'),
-                        'Cases':          st.column_config.NumberColumn('Cases', format='%d', width='small'),
+                        'Tier':           st.column_config.TextColumn('Tier',      width='small'),
+                        'Reason':         st.column_config.TextColumn('Reason',    width='medium'),
+                        'Days Left':      st.column_config.NumberColumn('Days Left', format='%.1f'),
+                        'Cases':          st.column_config.NumberColumn('Cases',   format='%d', width='small'),
                         'Daily Vel':      st.column_config.NumberColumn('Daily Vel',      format='%.3f'),
                         'Weekly Vel':     st.column_config.NumberColumn('Weekly Vel',     format='%.2f'),
-                        'Unit Price':     st.column_config.NumberColumn('Unit Price',     format='$%.2f'),
                         'Est. Case Cost': st.column_config.NumberColumn('Est. Case Cost', format='$%.2f'),
                     }
                 )
@@ -3096,9 +3131,12 @@ with tab4:
             # as the FIRST (and only) sheet so the OCS portal can read it
             _ocs_buf = io.BytesIO()
             if not _am_gaps.empty and 'Supplier Sku' in _am_gaps.columns:
-                _ocs_df = _am_gaps[['Supplier Sku','Cases']].rename(
-                    columns={'Supplier Sku':'SKU','Cases':'Quantity'}
-                ).copy()
+                # Deduplicate on SKU (a SKU shouldn't appear twice) and keep highest case count
+                _ocs_df = (
+                    _am_gaps[['Supplier Sku','Cases']]
+                    .groupby('Supplier Sku', as_index=False)['Cases'].max()
+                    .rename(columns={'Supplier Sku':'SKU','Cases':'Quantity'})
+                )
                 with pd.ExcelWriter(_ocs_buf, engine='openpyxl') as _ocs_w:
                     _ocs_df.to_excel(_ocs_w, sheet_name='MasterCatalogue', index=False)
             _ocs_buf.seek(0)
