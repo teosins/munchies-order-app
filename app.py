@@ -2844,22 +2844,31 @@ with tab4:
                 lambda x: 'On Shelf' if x > 0 else 'Order Now'
             )
 
+            # ── pre-compute gaps + costs (needed for metrics + table) ────────
+            _am_gaps_early = _am_menu[_am_menu['In Stock Qty'] == 0].copy()
+            _am_gaps_early['Cases'] = 1
+            if 'Unit Price' in _am_gaps_early.columns and 'Pack Size' in _am_gaps_early.columns:
+                _am_gaps_early['Est. Case Cost'] = (
+                    _am_gaps_early['Pack Size'] * _am_gaps_early['Unit Price'].fillna(0)
+                ).round(2)
+            else:
+                _am_gaps_early['Est. Case Cost'] = 0.0
+            _am_order_cost = _am_gaps_early['Est. Case Cost'].sum()
+
             # ── summary metrics ───────────────────────────────────────────
             _am_on   = int((_am_menu['In Stock Qty'] > 0).sum())
             _am_off  = len(_am_menu) - _am_on
-            _am_vel  = _am_menu['Daily Vel'].mean()
             _am_wku  = _am_menu['Daily Vel'].sum() * 7
             _am_cats_n = _am_menu['Classification'].nunique()
 
             st.markdown("---")
-            _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
-            _mc1.metric("Recommended SKUs", f"{len(_am_menu)}")
+            _mc1, _mc2, _mc3, _mc4, _mc5, _mc6 = st.columns(6)
+            _mc1.metric("Recommended SKUs",  f"{len(_am_menu)}")
             _mc2.metric("Already on Shelf",  f"{_am_on}")
-            _mc3.metric("Need to Order",      f"{_am_off}",
-                        delta=f"-{_am_off} gaps" if _am_off else None,
-                        delta_color="inverse")
-            _mc4.metric("Categories Covered", f"{_am_cats_n}")
-            _mc5.metric("Est. Weekly Units",   f"{_am_wku:,.0f}")
+            _mc3.metric("Need to Order",     f"{_am_off}")
+            _mc4.metric("Categories",        f"{_am_cats_n}")
+            _mc5.metric("Est. Weekly Units", f"{_am_wku:,.0f}")
+            _mc6.metric("Est. Order Cost",   f"${_am_order_cost:,.2f}")
 
             st.markdown("---")
 
@@ -2870,6 +2879,12 @@ with tab4:
                 Total_Vel=('Daily Vel','sum'),
             ).reset_index()
             _cs['Order_Now'] = _cs['SKUs'] - _cs['On_Shelf']
+            # add per-category order cost
+            if not _am_gaps_early.empty and 'Est. Case Cost' in _am_gaps_early.columns:
+                _cat_cost = _am_gaps_early.groupby('Classification')['Est. Case Cost'].sum().rename('Order_Cost')
+                _cs = _cs.merge(_cat_cost, on='Classification', how='left').fillna({'Order_Cost': 0.0})
+            else:
+                _cs['Order_Cost'] = 0.0
             _cs = _cs.sort_values('Total_Vel', ascending=False)
 
             _fig_bar = _go4.Figure()
@@ -2887,6 +2902,27 @@ with tab4:
                 yaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
             )
             st.plotly_chart(_fig_bar, use_container_width=True)
+
+            # ── category breakdown table ──────────────────────────────────
+            _cs_disp = _cs[['Classification','SKUs','On_Shelf','Order_Now','Order_Cost']].rename(columns={
+                'Classification': 'Category',
+                'SKUs':           'Total SKUs',
+                'On_Shelf':       'On Shelf',
+                'Order_Now':      'Need to Order',
+                'Order_Cost':     'Est. Order Cost',
+            }).copy()
+            st.dataframe(
+                _cs_disp,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    'Total SKUs':      st.column_config.NumberColumn('Total SKUs',      format='%d'),
+                    'On Shelf':        st.column_config.NumberColumn('On Shelf',        format='%d'),
+                    'Need to Order':   st.column_config.NumberColumn('Need to Order',   format='%d'),
+                    'Est. Order Cost': st.column_config.NumberColumn('Est. Order Cost', format='$%.2f'),
+                }
+            )
+            st.caption(f"**Total: {len(_am_menu)} SKUs · ${_am_order_cost:,.2f} to order**")
 
             # ── velocity heatmap (category × size) ────────────────────────
             _hm = (_am_menu.groupby(['Classification','Product Size'])['Daily Vel']
@@ -2978,7 +3014,7 @@ with tab4:
             )
 
             # ── gaps to order ─────────────────────────────────────────────
-            _am_gaps = _am_menu[_am_menu['In Stock Qty'] == 0].copy()
+            _am_gaps = _am_gaps_early  # already computed above
             if not _am_gaps.empty:
                 st.markdown("---")
                 st.markdown(f"#### 📦 {len(_am_gaps)} Missing SKUs — Order to Complete Your Menu")
@@ -2986,11 +3022,6 @@ with tab4:
                     "These top performers belong on your menu but aren't currently on your shelf. "
                     "Sorted by velocity — the top of this list is your biggest missed opportunity."
                 )
-                _am_gaps['Cases'] = 1
-                if 'Unit Price' in _am_gaps.columns and 'Pack Size' in _am_gaps.columns:
-                    _am_gaps['Est. Case Cost'] = (
-                        _am_gaps['Pack Size'] * _am_gaps['Unit Price'].fillna(0)
-                    ).round(2)
                 _gap_c = [c for c in ['Product','Classification','Product Size','Strain','Tier',
                                        'Weekly Vel','Daily Vel','Cases','Unit Price','Est. Case Cost']
                           if c in _am_gaps.columns]
@@ -3012,9 +3043,7 @@ with tab4:
                         'Est. Case Cost': st.column_config.NumberColumn('Est. Case Cost', format='$%.2f'),
                     }
                 )
-                if 'Est. Case Cost' in _am_gaps.columns:
-                    _gap_total = _am_gaps['Est. Case Cost'].sum()
-                    st.caption(f"{len(_am_gaps)} SKUs · {int(_am_gaps['Cases'].sum())} cases · Est. ${_gap_total:,.2f}")
+                st.caption(f"{len(_am_gaps)} SKUs · {int(_am_gaps['Cases'].sum())} cases · **Est. ${_am_order_cost:,.2f}**")
 
             # ── download ──────────────────────────────────────────────────
             st.markdown("---")
