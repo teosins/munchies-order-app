@@ -3085,20 +3085,25 @@ with tab4:
                     pd.DataFrame([{'Note': 'All recommended SKUs are already on your shelf — no gaps to fill.'}]).to_excel(
                         _aiw, sheet_name='Order to Complete Menu', index=False)
 
-                # Sheet 3 — OCS upload format (SKU + Quantity)
-                if not _am_gaps.empty and 'Supplier Sku' in _am_gaps.columns:
-                    _ocs_upload = _am_gaps[['Supplier Sku','Cases']].rename(
-                        columns={'Supplier Sku':'SKU','Cases':'Quantity'}
-                    ).copy()
-                    _ocs_upload.to_excel(_aiw, sheet_name='OCS Upload', index=False)
-
-                # Sheet 4 — category breakdown
+                # Sheet 3 — category breakdown
                 _cs.rename(columns={'On_Shelf':'On Shelf','Order_Now':'Order Now',
-                                    'Total_Vel':'Total Daily Vel'}).to_excel(
+                                    'Total_Vel':'Total Daily Vel','Order_Cost':'Est. Order Cost'}).to_excel(
                     _aiw, sheet_name='Category Breakdown', index=False)
 
             _ai_buf.seek(0)
-            _dl_c1, _dl_c2 = st.columns([2, 1])
+
+            # Separate OCS upload file — must be its own file with MasterCatalogue
+            # as the FIRST (and only) sheet so the OCS portal can read it
+            _ocs_buf = io.BytesIO()
+            if not _am_gaps.empty and 'Supplier Sku' in _am_gaps.columns:
+                _ocs_df = _am_gaps[['Supplier Sku','Cases']].rename(
+                    columns={'Supplier Sku':'SKU','Cases':'Quantity'}
+                ).copy()
+                with pd.ExcelWriter(_ocs_buf, engine='openpyxl') as _ocs_w:
+                    _ocs_df.to_excel(_ocs_w, sheet_name='MasterCatalogue', index=False)
+            _ocs_buf.seek(0)
+
+            _dl_c1, _dl_c2 = st.columns(2)
             with _dl_c1:
                 st.download_button(
                     "📥 Download AI Menu Report (.xlsx)",
@@ -3106,15 +3111,23 @@ with tab4:
                     file_name=f'AIMenu_{_today4.strftime("%Y%m%d")}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     use_container_width=True,
-                    help=(
-                        "4 sheets: AI Recommended Menu · Order to Complete Menu · "
-                        "OCS Upload (SKU + Quantity) · Category Breakdown. "
-                        "All filters applied."
-                    ),
+                    help="Full report: recommended menu, gaps to order, category breakdown.",
                 )
             with _dl_c2:
-                st.caption(
-                    f"**{len(_am_menu)} SKUs** recommended  \n"
-                    f"**{len(_am_gaps)} to order** · **{_am_on} on shelf**  \n"
-                    f"Mode: {_am_mode}"
+                st.download_button(
+                    "📤 Upload to OCS (.xlsx)",
+                    data=_ocs_buf,
+                    file_name=f'OCS_AIMenu_{_today4.strftime("%Y%m%d")}.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True,
+                    help="Import this file directly into the OCS portal — SKU + Quantity only.",
+                    disabled=_am_gaps.empty,
                 )
+            st.caption(
+                f"**{len(_am_menu)} SKUs** recommended &nbsp;·&nbsp; "
+                f"**{len(_am_gaps)} to order** &nbsp;·&nbsp; "
+                f"**{_am_on} on shelf** &nbsp;·&nbsp; "
+                f"**Est. ${_am_order_cost:,.2f}** &nbsp;·&nbsp; "
+                f"Mode: {_am_mode}",
+                unsafe_allow_html=True,
+            )
