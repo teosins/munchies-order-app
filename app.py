@@ -2983,20 +2983,20 @@ with tab4:
                 st.markdown("---")
                 st.markdown(f"#### 📦 {len(_am_gaps)} Missing SKUs — Order to Complete Your Menu")
                 st.caption(
-                    "These are top performers that belong on your menu but aren't currently on your shelf. "
+                    "These top performers belong on your menu but aren't currently on your shelf. "
                     "Sorted by velocity — the top of this list is your biggest missed opportunity."
                 )
+                _am_gaps['Cases'] = 1
+                if 'Unit Price' in _am_gaps.columns and 'Pack Size' in _am_gaps.columns:
+                    _am_gaps['Est. Case Cost'] = (
+                        _am_gaps['Pack Size'] * _am_gaps['Unit Price'].fillna(0)
+                    ).round(2)
                 _gap_c = [c for c in ['Product','Classification','Product Size','Strain','Tier',
-                                       'Weekly Vel','Daily Vel','Unit Price','Pack Size']
+                                       'Weekly Vel','Daily Vel','Cases','Unit Price','Est. Case Cost']
                           if c in _am_gaps.columns]
                 _gap_disp = _am_gaps[_gap_c].copy().rename(
                     columns={'Classification':'Category','Product Size':'Size'}
                 )
-                if 'Unit Price' in _gap_disp.columns and 'Pack Size' in _gap_disp.columns:
-                    _gap_disp['Est. Case Cost'] = (
-                        _gap_disp['Pack Size'] * _gap_disp['Unit Price'].fillna(0)
-                    ).round(2)
-                    _gap_disp = _gap_disp.drop(columns=['Pack Size'])
                 _gap_disp['Daily Vel']  = _gap_disp['Daily Vel'].round(3)
                 _gap_disp['Weekly Vel'] = _gap_disp['Weekly Vel'].round(2)
                 st.dataframe(
@@ -3004,42 +3004,88 @@ with tab4:
                     hide_index=True,
                     use_container_width=True,
                     column_config={
-                        'Tier':           st.column_config.TextColumn('Tier', width='small'),
+                        'Tier':           st.column_config.TextColumn('Tier',   width='small'),
+                        'Cases':          st.column_config.NumberColumn('Cases', format='%d', width='small'),
                         'Daily Vel':      st.column_config.NumberColumn('Daily Vel',      format='%.3f'),
                         'Weekly Vel':     st.column_config.NumberColumn('Weekly Vel',     format='%.2f'),
                         'Unit Price':     st.column_config.NumberColumn('Unit Price',     format='$%.2f'),
                         'Est. Case Cost': st.column_config.NumberColumn('Est. Case Cost', format='$%.2f'),
                     }
                 )
+                if 'Est. Case Cost' in _am_gaps.columns:
+                    _gap_total = _am_gaps['Est. Case Cost'].sum()
+                    st.caption(f"{len(_am_gaps)} SKUs · {int(_am_gaps['Cases'].sum())} cases · Est. ${_gap_total:,.2f}")
 
             # ── download ──────────────────────────────────────────────────
             st.markdown("---")
             _ai_buf = io.BytesIO()
             with pd.ExcelWriter(_ai_buf, engine='openpyxl') as _aiw:
+                # Sheet 1 — full recommended menu
                 _exp_cols = [c for c in ['Product','Classification','Product Size','Strain','Tier',
                                           'Weekly Vel','Daily Vel','In Stock Qty','Unit Price','Supplier Sku','Status']
                              if c in _am_menu.columns]
-                _am_menu[_exp_cols].rename(
+                _menu_sheet = _am_menu[_exp_cols].rename(
                     columns={'Classification':'Category','Product Size':'Size','In Stock Qty':'On Shelf'}
-                ).to_excel(_aiw, sheet_name='AI Recommended Menu', index=False)
+                ).copy()
+                _menu_sheet['Daily Vel']  = _menu_sheet['Daily Vel'].round(3)
+                _menu_sheet['Weekly Vel'] = _menu_sheet['Weekly Vel'].round(2)
+                _menu_sheet.to_excel(_aiw, sheet_name='AI Recommended Menu', index=False, startrow=5)
+                # Write filter metadata above the table
+                _ws_menu = _aiw.sheets['AI Recommended Menu']
+                _ws_menu.cell(row=1, column=1, value='AI Menu Optimizer — Recommended Menu').font = Font(bold=True, size=12)
+                _ws_menu.cell(row=2, column=1, value=f'Generated: {_today4.strftime("%B %d, %Y")}')
+                _ws_menu.cell(row=3, column=1, value=f'Mode: {_am_mode}  |  Target SKUs: {_am_n}  |  Tiers: {", ".join(_am_tiers)}')
+                _ws_menu.cell(row=4, column=1, value=f'Categories: {", ".join(_am_cats)}')
 
-                if not _am_gaps.empty:
-                    _gap_exp = [c for c in ['Product','Classification','Product Size','Strain','Tier',
-                                             'Weekly Vel','Daily Vel','Unit Price','Pack Size','Supplier Sku']
-                                if c in _am_gaps.columns]
-                    _am_gaps[_gap_exp].rename(
+                # Sheet 2 — gaps to order (always included)
+                _gap_exp_cols = [c for c in ['Product','Classification','Product Size','Strain','Tier',
+                                              'Weekly Vel','Daily Vel','Cases','Unit Price','Est. Case Cost','Supplier Sku']
+                                 if c in _am_gaps.columns]
+                if not _am_gaps.empty and _gap_exp_cols:
+                    _gap_sheet = _am_gaps[_gap_exp_cols].rename(
                         columns={'Classification':'Category','Product Size':'Size'}
-                    ).to_excel(_aiw, sheet_name='Order to Complete Menu', index=False)
+                    ).copy()
+                    _gap_sheet['Daily Vel']  = _gap_sheet['Daily Vel'].round(3)
+                    _gap_sheet['Weekly Vel'] = _gap_sheet['Weekly Vel'].round(2)
+                    _gap_sheet.to_excel(_aiw, sheet_name='Order to Complete Menu', index=False, startrow=4)
+                    _ws_gap = _aiw.sheets['Order to Complete Menu']
+                    _ws_gap.cell(row=1, column=1, value='Order to Complete AI Menu').font = Font(bold=True, size=12)
+                    _ws_gap.cell(row=2, column=1, value=f'Generated: {_today4.strftime("%B %d, %Y")}  |  Mode: {_am_mode}  |  Tiers: {", ".join(_am_tiers)}')
+                    _ws_gap.cell(row=3, column=1, value=f'Categories: {", ".join(_am_cats)}')
+                else:
+                    pd.DataFrame([{'Note': 'All recommended SKUs are already on your shelf — no gaps to fill.'}]).to_excel(
+                        _aiw, sheet_name='Order to Complete Menu', index=False)
 
+                # Sheet 3 — OCS upload format (SKU + Quantity)
+                if not _am_gaps.empty and 'Supplier Sku' in _am_gaps.columns:
+                    _ocs_upload = _am_gaps[['Supplier Sku','Cases']].rename(
+                        columns={'Supplier Sku':'SKU','Cases':'Quantity'}
+                    ).copy()
+                    _ocs_upload.to_excel(_aiw, sheet_name='OCS Upload', index=False)
+
+                # Sheet 4 — category breakdown
                 _cs.rename(columns={'On_Shelf':'On Shelf','Order_Now':'Order Now',
                                     'Total_Vel':'Total Daily Vel'}).to_excel(
                     _aiw, sheet_name='Category Breakdown', index=False)
+
             _ai_buf.seek(0)
-            st.download_button(
-                "📥 Download AI Menu Report (.xlsx)",
-                data=_ai_buf,
-                file_name=f'AIMenu_{_today4.strftime("%Y%m%d")}.xlsx',
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                use_container_width=True,
-                help="Full recommended menu, missing SKUs to order, and category breakdown — three sheets.",
-            )
+            _dl_c1, _dl_c2 = st.columns([2, 1])
+            with _dl_c1:
+                st.download_button(
+                    "📥 Download AI Menu Report (.xlsx)",
+                    data=_ai_buf,
+                    file_name=f'AIMenu_{_today4.strftime("%Y%m%d")}.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True,
+                    help=(
+                        "4 sheets: AI Recommended Menu · Order to Complete Menu · "
+                        "OCS Upload (SKU + Quantity) · Category Breakdown. "
+                        "All filters applied."
+                    ),
+                )
+            with _dl_c2:
+                st.caption(
+                    f"**{len(_am_menu)} SKUs** recommended  \n"
+                    f"**{len(_am_gaps)} to order** · **{_am_on} on shelf**  \n"
+                    f"Mode: {_am_mode}"
+                )
