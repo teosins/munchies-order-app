@@ -406,7 +406,13 @@ if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
                         </script>""", height=0)
                     st.rerun()
                 except Exception as _e:
-                    st.error(f"Login error: {str(_e)}")
+                    _err = str(_e)
+                    if 'Invalid login credentials' in _err:
+                        st.error("Invalid email or password. Please try again.")
+                    elif any(_t in _err for _t in ('521', 'Errno -2', 'nodename', 'Connection', 'timed out')):
+                        st.error("Can't reach the login server right now. Please try again in a minute.")
+                    else:
+                        st.error("Login failed. Please try again.")
     st.stop()
 
 # ── stripe ────────────────────────────────────────────────────
@@ -803,6 +809,14 @@ def _build_settings_from_state(prof_name):
                 _ADV_DEFAULTS['Flower']))
             for _asc in _CAT_SUBCAT_DEFS['Flower']
         },
+        'tier_thresholds': {
+            'a': int(st.session_state.get('s_tier_a', 7)),
+            'b': int(st.session_state.get('s_tier_b', 3)),
+            'c': int(st.session_state.get('s_tier_c', 1)),
+            'd': float(st.session_state.get('s_tier_d', 0.5)),
+        },
+        'vel_window':   st.session_state.get('s_vel_window', 'Blended'),
+        'safety_stock': int(st.session_state.get('s_safety_stock', 3)),
     }
 
 # show trial banner if trialing
@@ -1059,6 +1073,15 @@ with st.sidebar:
         for _asc, _val in p.get('adv_flower_subcats', {}).items():
             _sk = f"sc_Flower_{_asc}".replace(' ','_').replace('-','_').replace('/','_')
             st.session_state[_sk] = int(_val)
+        _tt = p.get('tier_thresholds', {})
+        if 'a' in _tt: st.session_state['s_tier_a'] = int(_tt['a'])
+        if 'b' in _tt: st.session_state['s_tier_b'] = int(_tt['b'])
+        if 'c' in _tt: st.session_state['s_tier_c'] = int(_tt['c'])
+        if 'd' in _tt: st.session_state['s_tier_d'] = float(_tt['d'])
+        if p.get('vel_window') in ('30d','7d','Blended'):
+            st.session_state['s_vel_window'] = p['vel_window']
+        if p.get('safety_stock') is not None:
+            st.session_state['s_safety_stock'] = int(p['safety_stock'])
 
     if _prof_names:
         _sel = st.selectbox("Load a saved location", ["— select —"] + _prof_names, key="prof_select")
@@ -3064,20 +3087,32 @@ with tab4:
                 _gap_disp['Weekly Vel'] = _gap_disp['Weekly Vel'].round(2)
                 if 'Days Left' in _gap_disp.columns:
                     _gap_disp['Days Left'] = _gap_disp['Days Left'].round(1)
-                st.dataframe(
+                _gap_edited = st.data_editor(
                     _gap_disp,
                     hide_index=True,
                     use_container_width=True,
+                    key="ai_gap_editor",
+                    disabled=[c for c in _gap_disp.columns if c != 'Cases'],
                     column_config={
                         'Tier':           st.column_config.TextColumn('Tier',      width='small'),
                         'Reason':         st.column_config.TextColumn('Reason',    width='medium'),
                         'Days Left':      st.column_config.NumberColumn('Days Left', format='%.1f'),
-                        'Cases':          st.column_config.NumberColumn('Cases',   format='%d', width='small'),
+                        'Cases':          st.column_config.NumberColumn('Cases ✏️', format='%d', width='small',
+                                                                        min_value=0, max_value=99, step=1,
+                                                                        help='Edit how many cases to order — 0 removes it from the upload file'),
                         'Daily Vel':      st.column_config.NumberColumn('Daily Vel',      format='%.3f'),
                         'Weekly Vel':     st.column_config.NumberColumn('Weekly Vel',     format='%.2f'),
                         'Est. Case Cost': st.column_config.NumberColumn('Est. Case Cost', format='$%.2f'),
                     }
                 )
+                # Push edited case counts back into the order data
+                _am_gaps['Cases'] = _gap_edited['Cases'].fillna(0).astype(int).values
+                if 'Unit Price' in _am_gaps.columns and 'Pack Size' in _am_gaps.columns:
+                    _am_gaps['Est. Case Cost'] = (
+                        _am_gaps['Pack Size'] * _am_gaps['Cases'] * _am_gaps['Unit Price'].fillna(0)
+                    ).round(2)
+                _am_gaps = _am_gaps[_am_gaps['Cases'] > 0].copy()
+                _am_order_cost = _am_gaps['Est. Case Cost'].sum()
                 st.caption(f"{len(_am_gaps)} SKUs · {int(_am_gaps['Cases'].sum())} cases · **Est. ${_am_order_cost:,.2f}**")
 
             # ── download ──────────────────────────────────────────────────
@@ -3168,4 +3203,67 @@ with tab4:
                 f"**Est. ${_am_order_cost:,.2f}** &nbsp;·&nbsp; "
                 f"Mode: {_am_mode}",
                 unsafe_allow_html=True,
+            )
+
+        # ── dead stock — the flip side of the AI menu ─────────────────────
+        st.markdown("---")
+        st.markdown("#### 🧊 Dead Stock — On Shelf but Not Selling")
+        st.caption(
+            "Inventory sitting on your shelf with zero or near-zero sales. "
+            "Candidates for discounting, bundling, or discontinuing — this is money tied up doing nothing."
+        )
+        _ds_window = st.radio(
+            "No sales in the last…", ["30 days", "60 days"], index=1, horizontal=True, key="ds_window",
+            help="60 days is stricter — only shows truly dead items. 30 days catches slow-movers earlier."
+        )
+        _ds_col = 'Sales (30 Days)' if _ds_window == '30 days' else 'Sales (60 Days)'
+
+        _dead = merged_raw[
+            (merged_raw['In Stock Qty'] > 0) &
+            (merged_raw.get(_ds_col, pd.Series(0, index=merged_raw.index)).fillna(0) == 0)
+        ].copy()
+
+        if _dead.empty:
+            st.success(f"No dead stock — everything on your shelf has sold in the last {_ds_window}. 🎉")
+        else:
+            if 'Unit Price' in _dead.columns:
+                _dead['Tied-Up Value'] = (_dead['In Stock Qty'] * _dead['Unit Price'].fillna(0)).round(2)
+            else:
+                _dead['Tied-Up Value'] = 0.0
+            _dead = _dead.sort_values('Tied-Up Value', ascending=False)
+
+            _ds1, _ds2, _ds3 = st.columns(3)
+            _ds1.metric("Dead SKUs", f"{len(_dead)}")
+            _ds2.metric("Units Stuck", f"{int(_dead['In Stock Qty'].sum()):,}")
+            _ds3.metric("Est. Value Tied Up", f"${_dead['Tied-Up Value'].sum():,.2f}")
+
+            _ds_cols = [c for c in ['Product','Classification','Product Size','Strain',
+                                     'In Stock Qty','Sales (30 Days)','Sales (60 Days)','Unit Price','Tied-Up Value']
+                        if c in _dead.columns]
+            _ds_disp = _dead[_ds_cols].rename(columns={
+                'Classification':'Category','Product Size':'Size',
+                'In Stock Qty':'On Shelf','Sales (30 Days)':'Sold 30d','Sales (60 Days)':'Sold 60d',
+            })
+            st.dataframe(
+                _ds_disp,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    'On Shelf':      st.column_config.NumberColumn('On Shelf', format='%d'),
+                    'Sold 30d':      st.column_config.NumberColumn('Sold 30d', format='%d'),
+                    'Sold 60d':      st.column_config.NumberColumn('Sold 60d', format='%d'),
+                    'Unit Price':    st.column_config.NumberColumn('Unit Price',    format='$%.2f'),
+                    'Tied-Up Value': st.column_config.NumberColumn('Tied-Up Value', format='$%.2f'),
+                }
+            )
+
+            _ds_buf = io.BytesIO()
+            with pd.ExcelWriter(_ds_buf, engine='openpyxl') as _dsw:
+                _ds_disp.to_excel(_dsw, sheet_name='Dead Stock', index=False)
+            _ds_buf.seek(0)
+            st.download_button(
+                "📥 Download Dead Stock List (.xlsx)",
+                data=_ds_buf,
+                file_name=f'DeadStock_{_today4.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             )
