@@ -38,8 +38,23 @@ html, body, [class*="css"], .stApp, button, input, select, textarea {
     -webkit-font-smoothing: antialiased;
 }
 
-/* ── hide default streamlit chrome ── */
-#MainMenu, footer, header {visibility: hidden;}
+/* ── hide default streamlit chrome (but keep the sidebar toggle) ── */
+#MainMenu, footer { visibility: hidden; }
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    visibility: visible;
+}
+[data-testid="stToolbar"] { visibility: hidden; }   /* deploy/rerun menu */
+[data-testid="stDecoration"] { display: none; }     /* top gradient bar */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"] {
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="collapsedControl"] button {
+    color: #9ca3af !important;
+}
 
 /* ── app background: deep base with a faint top glow ── */
 .stApp {
