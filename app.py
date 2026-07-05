@@ -13,158 +13,256 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
+/* ── design tokens ── */
+:root {
+    --fr-bg:        #0a0a12;
+    --fr-surface:   #12121d;
+    --fr-surface-2: #181826;
+    --fr-line:      rgba(255,255,255,0.07);
+    --fr-line-soft: rgba(255,255,255,0.05);
+    --fr-accent:    #89d4f5;
+    --fr-accent-08: rgba(137,212,245,0.08);
+    --fr-accent-15: rgba(137,212,245,0.15);
+    --fr-accent-30: rgba(137,212,245,0.30);
+    --fr-accent-45: rgba(137,212,245,0.45);
+    --fr-text:      #f0f0f8;
+    --fr-text-2:    #d1d5db;
+    --fr-text-3:    #9ca3af;
+    --fr-text-4:    #6b7280;
+    --ease-out:     cubic-bezier(0.23, 1, 0.32, 1);
+}
+
 /* ── global font ── */
 html, body, [class*="css"], .stApp, button, input, select, textarea {
     font-family: 'Inter', sans-serif !important;
+    -webkit-font-smoothing: antialiased;
 }
 
 /* ── hide default streamlit chrome ── */
 #MainMenu, footer, header {visibility: hidden;}
 
-/* ── app background ── */
+/* ── app background: deep base with a faint top glow ── */
 .stApp {
-    background: #0a0a12;
+    background:
+        radial-gradient(ellipse 90% 45% at 50% -10%, rgba(105,160,235,0.07), transparent),
+        var(--fr-bg);
 }
+
+/* ── text selection ── */
+::selection { background: rgba(137,212,245,0.28); color: #fff; }
+
+/* ── scrollbars ── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.13);
+    border-radius: 5px;
+    border: 2px solid var(--fr-bg);
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+::-webkit-scrollbar-corner { background: transparent; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
 
 /* ── main content padding ── */
 .block-container {
     padding-top: 2rem !important;
     padding-left: 2.5rem !important;
     padding-right: 2.5rem !important;
+    max-width: 1440px !important;
 }
 
 /* ── sidebar ── */
 [data-testid="stSidebar"] {
     background: #0d0d1a !important;
-    border-right: 1px solid rgba(255,255,255,0.06);
+    border-right: 1px solid var(--fr-line-soft);
 }
 [data-testid="stSidebar"] > div {
     padding-top: 1.2rem;
 }
 
+/* ── wordmark ── */
+.fr-wordmark {
+    font-size: 1.9rem;
+    font-weight: 800;
+    letter-spacing: -0.045em;
+    color: var(--fr-text);
+    line-height: 1;
+}
+.fr-wordmark .fr-dot { color: var(--fr-accent); }
+.fr-wordmark-sm {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--fr-text);
+}
+.fr-tagline {
+    color: var(--fr-text-4);
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-top: 6px;
+}
+
 /* ── metric cards ── */
-[data-testid="metric-container"] {
-    background: #13131f;
-    border: 1px solid rgba(255,255,255,0.07);
+[data-testid="metric-container"], [data-testid="stMetric"] {
+    background: var(--fr-surface);
+    border: 1px solid var(--fr-line);
     border-radius: 12px;
     padding: 16px 20px;
-    transition: border-color 0.2s;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+    transition: border-color 200ms ease;
 }
-[data-testid="metric-container"]:hover {
-    border-color: rgba(137,212,245,0.25);
-}
-[data-testid="metric-container"] [data-testid="stMetricLabel"] {
-    color: #6b7280 !important;
+[data-testid="metric-container"] [data-testid="stMetricLabel"],
+[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+    color: var(--fr-text-4) !important;
     font-size: 0.7rem;
     font-weight: 500;
     letter-spacing: 0.08em;
     text-transform: uppercase;
 }
-[data-testid="metric-container"] [data-testid="stMetricValue"] {
-    color: #f0f0f8 !important;
+[data-testid="metric-container"] [data-testid="stMetricValue"],
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    color: var(--fr-text) !important;
     font-size: 1.5rem;
     font-weight: 700;
     letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
 }
 
-/* ── tabs ── */
+/* ── tabs: single pill affordance, no competing underline ── */
 .stTabs [data-baseweb="tab-list"] {
-    background: #13131f;
-    border-radius: 10px;
+    background: var(--fr-surface);
+    border-radius: 12px;
     padding: 4px;
     gap: 2px;
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid var(--fr-line-soft);
 }
 .stTabs [data-baseweb="tab"] {
-    border-radius: 8px;
-    color: #6b7280 !important;
+    border-radius: 9px;
+    color: var(--fr-text-4) !important;
     font-weight: 500;
     font-size: 0.875rem;
     letter-spacing: 0.01em;
     padding: 8px 22px;
-    transition: all 0.15s;
-}
-.stTabs [data-baseweb="tab"]:hover {
-    color: #d1d5db !important;
-    background: rgba(255,255,255,0.04) !important;
+    border-bottom: none !important;
+    transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out);
 }
 .stTabs [aria-selected="true"] {
-    background: rgba(137,212,245,0.08) !important;
-    color: #89d4f5 !important;
-    border-bottom: 2px solid #89d4f5 !important;
+    background: var(--fr-accent-08) !important;
+    color: var(--fr-accent) !important;
+    border-bottom: none !important;
+    box-shadow: inset 0 0 0 1px rgba(137,212,245,0.22);
     font-weight: 600 !important;
 }
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {
+    display: none !important;
+}
 
-/* ── all buttons ── */
+/* ── buttons ── */
 .stButton button {
-    background: #13131f;
+    background: var(--fr-surface);
     border: 1px solid rgba(255,255,255,0.1);
-    color: #d1d5db !important;
-    border-radius: 8px;
+    color: var(--fr-text-2) !important;
+    border-radius: 9px;
     font-weight: 500;
     font-size: 0.875rem;
     padding: 8px 18px;
-    transition: all 0.15s;
     letter-spacing: 0.01em;
+    transition: background-color 150ms var(--ease-out),
+                border-color 150ms var(--ease-out),
+                color 150ms var(--ease-out),
+                transform 120ms var(--ease-out);
 }
-.stButton button:hover {
-    background: #1a1a2e;
-    border-color: rgba(137,212,245,0.3);
-    color: #89d4f5 !important;
+.stButton button:active { transform: scale(0.97); }
+.stButton button:focus-visible {
+    outline: 2px solid var(--fr-accent-45);
+    outline-offset: 2px;
 }
 .stButton button[kind="primary"] {
-    background: rgba(137,212,245,0.1);
-    border-color: rgba(137,212,245,0.35);
-    color: #89d4f5 !important;
+    background: var(--fr-accent-08);
+    border-color: var(--fr-accent-30);
+    color: var(--fr-accent) !important;
 }
 
-/* ── download buttons ── */
+/* ── download buttons: the primary CTA ── */
 [data-testid="stDownloadButton"] button {
-    background: rgba(137,212,245,0.08);
-    border: 1px solid rgba(137,212,245,0.25);
-    color: #89d4f5 !important;
-    border-radius: 8px;
+    background: var(--fr-accent-08);
+    border: 1px solid var(--fr-accent-30);
+    color: var(--fr-accent) !important;
+    border-radius: 9px;
     font-weight: 600;
     font-size: 0.875rem;
     letter-spacing: 0.02em;
-    transition: all 0.15s;
     width: 100%;
+    transition: background-color 150ms var(--ease-out),
+                border-color 150ms var(--ease-out),
+                box-shadow 200ms var(--ease-out),
+                transform 120ms var(--ease-out);
 }
-[data-testid="stDownloadButton"] button:hover {
-    background: rgba(137,212,245,0.16);
-    border-color: rgba(137,212,245,0.5);
-    box-shadow: 0 0 20px rgba(137,212,245,0.12);
+[data-testid="stDownloadButton"] button:active { transform: scale(0.98); }
+[data-testid="stDownloadButton"] button:focus-visible {
+    outline: 2px solid var(--fr-accent-45);
+    outline-offset: 2px;
+}
+
+/* ── hover states, gated to devices that actually hover ── */
+@media (hover: hover) and (pointer: fine) {
+    [data-testid="metric-container"]:hover, [data-testid="stMetric"]:hover {
+        border-color: rgba(137,212,245,0.25);
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: var(--fr-text-2) !important;
+        background: rgba(255,255,255,0.04) !important;
+    }
+    .stButton button:hover {
+        background: var(--fr-surface-2);
+        border-color: var(--fr-accent-30);
+        color: var(--fr-accent) !important;
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        background: var(--fr-accent-15);
+        border-color: var(--fr-accent-45);
+        box-shadow: 0 0 24px rgba(137,212,245,0.10);
+    }
+    [data-testid="stExpander"]:hover { border-color: rgba(137,212,245,0.2) !important; }
+    [data-testid="stRadio"] label:hover {
+        border-color: rgba(137,212,245,0.25);
+        color: var(--fr-text-2);
+    }
 }
 
 /* ── expanders ── */
 [data-testid="stExpander"] {
-    border: 1px solid rgba(255,255,255,0.07) !important;
+    border: 1px solid var(--fr-line) !important;
     border-radius: 12px !important;
-    background: #13131f !important;
-    transition: border-color 0.2s;
-}
-[data-testid="stExpander"]:hover {
-    border-color: rgba(137,212,245,0.2) !important;
+    background: var(--fr-surface) !important;
+    transition: border-color 200ms ease;
 }
 
 /* ── multiselect ── */
 [data-baseweb="select"] > div {
-    background: #13131f !important;
+    background: var(--fr-surface) !important;
     border-color: rgba(255,255,255,0.1) !important;
-    border-radius: 8px !important;
+    border-radius: 9px !important;
 }
 [data-baseweb="tag"] {
-    background: rgba(137,212,245,0.1) !important;
-    border: 1px solid rgba(137,212,245,0.25) !important;
-    color: #89d4f5 !important;
+    background: var(--fr-accent-08) !important;
+    border: 1px solid var(--fr-accent-30) !important;
+    color: var(--fr-accent) !important;
     border-radius: 6px !important;
     font-size: 0.8rem !important;
     font-weight: 500 !important;
 }
 
-/* ── section headings ── */
+/* ── headings ── */
+.stMarkdown h1 {
+    color: var(--fr-text);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+}
 .stMarkdown h2 {
-    color: #f0f0f8;
+    color: var(--fr-text);
     font-weight: 700;
     font-size: 1.5rem;
     letter-spacing: -0.02em;
@@ -174,56 +272,56 @@ html, body, [class*="css"], .stApp, button, input, select, textarea {
     font-weight: 600;
     font-size: 1.1rem;
     letter-spacing: -0.01em;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+    border-bottom: 1px solid var(--fr-line-soft);
     padding-bottom: 8px;
     margin-bottom: 4px;
 }
+.stMarkdown h4 {
+    color: #e0e0ec;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
 
-/* ── dataframe ── */
-[data-testid="stDataFrame"] {
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 10px;
+/* ── inline code chips (size labels etc.) ── */
+.stMarkdown code {
+    background: var(--fr-surface-2) !important;
+    border: 1px solid var(--fr-line) !important;
+    color: var(--fr-accent) !important;
+    border-radius: 5px !important;
+    padding: 1px 7px !important;
+    font-size: 0.78rem !important;
+}
+
+/* ── dataframes & data editor ── */
+[data-testid="stDataFrame"], [data-testid="stDataEditor"] {
+    border: 1px solid var(--fr-line) !important;
+    border-radius: 10px !important;
     overflow: hidden;
 }
 
-/* ── number inputs ── */
-[data-testid="stNumberInput"] input {
-    background: #13131f !important;
-    border-color: rgba(255,255,255,0.1) !important;
-    border-radius: 8px !important;
-    color: #f0f0f8 !important;
-    font-family: 'Inter', sans-serif !important;
-}
-[data-testid="stNumberInput"] input:focus {
-    border-color: rgba(137,212,245,0.4) !important;
-    box-shadow: 0 0 0 2px rgba(137,212,245,0.08) !important;
-}
-
-/* ── text inputs ── */
-[data-testid="stTextInput"] input {
-    background: #13131f !important;
-    border-color: rgba(255,255,255,0.1) !important;
-    border-radius: 8px !important;
-    color: #f0f0f8 !important;
-    font-family: 'Inter', sans-serif !important;
-}
-[data-testid="stTextInput"] input:focus {
-    border-color: rgba(137,212,245,0.4) !important;
-    box-shadow: 0 0 0 2px rgba(137,212,245,0.08) !important;
-}
-
-/* ── date input ── */
+/* ── inputs: one consistent field treatment ── */
+[data-testid="stNumberInput"] input,
+[data-testid="stTextInput"] input,
 [data-testid="stDateInput"] input {
-    background: #13131f !important;
+    background: var(--fr-surface) !important;
     border-color: rgba(255,255,255,0.1) !important;
-    border-radius: 8px !important;
-    color: #f0f0f8 !important;
+    border-radius: 9px !important;
+    color: var(--fr-text) !important;
+    font-family: 'Inter', sans-serif !important;
+    font-variant-numeric: tabular-nums;
+    transition: border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+}
+[data-testid="stNumberInput"] input:focus,
+[data-testid="stTextInput"] input:focus,
+[data-testid="stDateInput"] input:focus {
+    border-color: var(--fr-accent-45) !important;
+    box-shadow: 0 0 0 3px var(--fr-accent-08) !important;
 }
 
 /* ── sliders ── */
 [data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] {
-    background: #89d4f5 !important;
-    border: 2px solid #89d4f5 !important;
+    background: var(--fr-accent) !important;
+    border: 2px solid var(--fr-accent) !important;
     box-shadow: 0 0 8px rgba(137,212,245,0.4) !important;
 }
 [data-testid="stSlider"] [data-baseweb="slider"] div[data-testid="stSliderTrack"] {
@@ -232,72 +330,84 @@ html, body, [class*="css"], .stApp, button, input, select, textarea {
 
 /* ── radio buttons ── */
 [data-testid="stRadio"] label {
-    background: #13131f;
+    background: var(--fr-surface);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 6px 14px;
     font-size: 0.85rem;
-    color: #9ca3af;
-    transition: all 0.15s;
+    color: var(--fr-text-3);
     cursor: pointer;
-}
-[data-testid="stRadio"] label:hover {
-    border-color: rgba(137,212,245,0.25);
-    color: #d1d5db;
+    transition: border-color 150ms var(--ease-out),
+                color 150ms var(--ease-out),
+                background-color 150ms var(--ease-out);
 }
 [data-testid="stRadio"] [aria-checked="true"] + div label,
 [data-testid="stRadio"] input:checked ~ label {
-    border-color: rgba(137,212,245,0.4) !important;
-    color: #89d4f5 !important;
+    border-color: var(--fr-accent-45) !important;
+    color: var(--fr-accent) !important;
     background: rgba(137,212,245,0.06) !important;
 }
 
 /* ── selectbox ── */
 [data-testid="stSelectbox"] > div > div {
-    background: #13131f !important;
+    background: var(--fr-surface) !important;
     border-color: rgba(255,255,255,0.1) !important;
-    border-radius: 8px !important;
+    border-radius: 9px !important;
 }
 
 /* ── checkbox ── */
 [data-testid="stCheckbox"] label {
-    color: #9ca3af;
+    color: var(--fr-text-3);
     font-size: 0.875rem;
 }
 
 /* ── captions ── */
 [data-testid="stCaptionContainer"] {
-    color: #6b7280 !important;
+    color: var(--fr-text-4) !important;
     font-size: 0.78rem !important;
 }
 
-/* ── info/success/warning boxes ── */
+/* ── alerts ── */
 [data-testid="stAlert"] {
+    background: var(--fr-surface) !important;
     border-radius: 10px !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
+    border: 1px solid var(--fr-line) !important;
     font-size: 0.875rem;
 }
 
 /* ── dividers ── */
 hr {
     border: none !important;
-    border-top: 1px solid rgba(255,255,255,0.06) !important;
+    border-top: 1px solid var(--fr-line-soft) !important;
     margin: 1.2rem 0 !important;
 }
 
 /* ── sidebar labels ── */
 [data-testid="stSidebar"] label {
-    color: #9ca3af !important;
+    color: var(--fr-text-3) !important;
     font-size: 0.8rem !important;
     font-weight: 500 !important;
     letter-spacing: 0.02em;
 }
 
-/* ── data editor ── */
-[data-testid="stDataEditor"] {
-    border: 1px solid rgba(255,255,255,0.07) !important;
+/* ── file uploader ── */
+[data-testid="stFileUploader"] section {
+    background: var(--fr-surface) !important;
+    border: 1px dashed rgba(255,255,255,0.15) !important;
     border-radius: 10px !important;
-    overflow: hidden;
+    transition: border-color 150ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+    [data-testid="stFileUploader"] section:hover {
+        border-color: var(--fr-accent-45) !important;
+    }
+}
+
+/* ── reduced motion: keep color feedback, drop movement ── */
+@media (prefers-reduced-motion: reduce) {
+    .stButton button:active,
+    [data-testid="stDownloadButton"] button:active { transform: none; }
+    * { transition-duration: 0.01ms !important; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -345,12 +455,8 @@ if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
 
     _lc1, _lc2, _lc3 = st.columns([1, 2, 1])
     with _lc2:
-        try:
-            st.image("opal_logo.png", use_container_width=True)
-        except Exception:
-            pass
-        st.markdown("<div class='login-title'>FILLRATE</div>", unsafe_allow_html=True)
-        st.markdown("<div class='login-sub'>Sign in to continue</div>", unsafe_allow_html=True)
+        st.markdown("<div class='fr-wordmark' style='text-align:center;margin-top:48px'>Fillrate<span class='fr-dot'>.</span></div>", unsafe_allow_html=True)
+        st.markdown("<div class='login-sub' style='text-align:center'>Sign in to continue</div>", unsafe_allow_html=True)
 
         # pre-fill saved email from localStorage
         import streamlit.components.v1 as _comp_login
@@ -559,12 +665,8 @@ if not _is_active:
 
     _sc1, _sc2, _sc3 = st.columns([1, 2, 1])
     with _sc2:
-        try:
-            st.image("opal_logo.png", use_container_width=True)
-        except Exception:
-            pass
-        st.markdown("<div style='text-align:center;margin-bottom:8px'><span style='background:linear-gradient(135deg,#89d4f5,#c9a6ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:1.4rem;font-weight:700;letter-spacing:0.1em'>OPAL ORDER TOOL</span></div>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center;color:#666;font-size:0.85rem;margin-bottom:24px'>The smart ordering tool for cannabis retailers</p>", unsafe_allow_html=True)
+        st.markdown("<div class='fr-wordmark' style='text-align:center;margin-top:32px'>Fillrate<span class='fr-dot'>.</span></div>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center;color:#666;font-size:0.85rem;margin:8px 0 24px 0'>The smart ordering tool for cannabis retailers</p>", unsafe_allow_html=True)
         st.markdown(f"<div style='text-align:center;background:rgba(137,212,245,0.08);border:1px solid rgba(137,212,245,0.2);border-radius:10px;padding:12px;margin-bottom:24px;color:#89d4f5;font-weight:600'>✨ {_TRIAL_DAYS}-day free trial — no credit card charged until trial ends</div>", unsafe_allow_html=True)
 
         # Pre-generate checkout URLs once per page load
@@ -1012,10 +1114,7 @@ def load_raw(kova_bytes, ocs_bytes):
 
 # ── sidebar ───────────────────────────────────────────────────
 with st.sidebar:
-    try:
-        st.image("opal_logo.png", use_container_width=True)
-    except Exception:
-        st.markdown("## 💎 OPAL Order Tool")
+    st.markdown("<div class='fr-wordmark-sm'>Fillrate<span style='color:#89d4f5'>.</span></div>", unsafe_allow_html=True)
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     # ── location profiles ─────────────────────────────────────
@@ -1386,13 +1485,9 @@ with st.sidebar:
 
 
 # ── main ──────────────────────────────────────────────────────
-try:
-    st.image("opal_logo.png", width=280)
-except Exception:
-    st.markdown("# 💎 OPAL Order Tool")
 st.markdown(
-    f"<p style='color:#666;font-size:0.85rem;letter-spacing:0.08em;margin-top:-8px'>"
-    f"ORDER TOOL &nbsp;·&nbsp; {date.today().strftime('%B %d, %Y').upper()}</p>",
+    f"<div class='fr-wordmark'>Fillrate<span class='fr-dot'>.</span></div>"
+    f"<p class='fr-tagline'>Inventory intelligence &nbsp;·&nbsp; {date.today().strftime('%B %d, %Y')}</p>",
     unsafe_allow_html=True
 )
 
