@@ -46,14 +46,24 @@ header[data-testid="stHeader"] {
 }
 [data-testid="stToolbar"] { visibility: hidden; }   /* deploy/rerun menu */
 [data-testid="stDecoration"] { display: none; }     /* top gradient bar */
+/* ── sidebar: pinned open, not collapsible ── */
+section[data-testid="stSidebar"] {
+    min-width: 330px !important;
+    max-width: 330px !important;
+    width: 330px !important;
+    transform: none !important;
+    visibility: visible !important;
+    margin-left: 0 !important;
+}
+section[data-testid="stSidebar"][aria-expanded="false"] {
+    display: block !important;
+    transform: none !important;
+    margin-left: 0 !important;
+}
+[data-testid="stSidebarCollapseButton"],
 [data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"] {
-    visibility: visible !important;
-    opacity: 1 !important;
-}
-[data-testid="stSidebarCollapsedControl"] button,
-[data-testid="collapsedControl"] button {
-    color: #9ca3af !important;
+    display: none !important;
 }
 
 /* ── app background: deep base with a faint top glow ── */
