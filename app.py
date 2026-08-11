@@ -542,8 +542,17 @@ if 'sb_user' not in st.session_state or st.session_state.sb_user is None:
                         st.error("Invalid email or password. Please try again.")
                     elif any(_t in _err for _t in ('521', 'Errno -2', 'nodename', 'Connection', 'timed out')):
                         st.error("Can't reach the login server right now. Please try again in a minute.")
+                        with st.expander("Technical details"):
+                            st.caption(
+                                "This is a connection failure, not a wrong password. "
+                                "The most common cause is the Supabase project being paused "
+                                "(free tier pauses after 7 days of inactivity) — restore it at supabase.com."
+                            )
+                            st.code(_err, language=None)
                     else:
                         st.error("Login failed. Please try again.")
+                        with st.expander("Technical details"):
+                            st.code(_err, language=None)
     st.stop()
 
 # ── stripe ────────────────────────────────────────────────────
