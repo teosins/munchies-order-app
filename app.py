@@ -953,6 +953,8 @@ def _build_settings_from_state(prof_name):
         },
         'vel_window':   st.session_state.get('s_vel_window', 'Blended'),
         'safety_stock': int(st.session_state.get('s_safety_stock', 3)),
+        'cap_on':       bool(st.session_state.get('s_cap_on', True)),
+        'coverage_cap': int(st.session_state.get('s_coverage_cap', 11)),
     }
 
 # show trial banner if trialing
@@ -1046,7 +1048,24 @@ def load_raw(kova_bytes, ocs_bytes):
     for _opt in ['Sub-Category','Size','Classification','Category','Product','Product Name','Variant Name','Brand']:
         if _opt in ocs.columns and _opt not in ocs_cols:
             ocs_cols.append(_opt)
-    merged = kova_ocs.merge(ocs[ocs_cols], left_on='Supplier Sku', right_on='OCS Variant Number', how='left')
+
+    # Collapse the catalogue to one row per variant before joining. Without this a
+    # variant listed more than once in the OCS file multiplies the matching Cova
+    # row, which shows up as the same SKU appearing several times in the order.
+    _ocs_lookup = ocs[ocs_cols].copy()
+    _dupe_variants = int(_ocs_lookup['OCS Variant Number'].duplicated().sum())
+    if _dupe_variants:
+        # Prefer in-stock rows when the catalogue disagrees with itself
+        if 'Stock Status' in _ocs_lookup.columns:
+            _ocs_lookup['_in_stock'] = (_ocs_lookup['Stock Status'] == 'YES').astype(int)
+            _ocs_lookup = _ocs_lookup.sort_values('_in_stock', ascending=False).drop(columns=['_in_stock'])
+        _ocs_lookup = _ocs_lookup.drop_duplicates(subset=['OCS Variant Number'], keep='first')
+    try:
+        st.session_state['_ocs_dupes_collapsed'] = _dupe_variants
+    except Exception:
+        pass
+
+    merged = kova_ocs.merge(_ocs_lookup, left_on='Supplier Sku', right_on='OCS Variant Number', how='left')
     if 'Sub-Category' not in merged.columns:
         merged['Sub-Category'] = ''
     else:
@@ -1215,6 +1234,10 @@ with st.sidebar:
             st.session_state['s_vel_window'] = p['vel_window']
         if p.get('safety_stock') is not None:
             st.session_state['s_safety_stock'] = int(p['safety_stock'])
+        if p.get('cap_on') is not None:
+            st.session_state['s_cap_on'] = bool(p['cap_on'])
+        if p.get('coverage_cap') is not None:
+            st.session_state['s_coverage_cap'] = int(p['coverage_cap'])
 
     if _prof_names:
         _sel = st.selectbox("Load a saved location", ["— select —"] + _prof_names, key="prof_select")
@@ -1349,6 +1372,36 @@ with st.sidebar:
         safety_stock = st.number_input("Safety Stock Buffer (days)", value=st.session_state.get('s_safety_stock', 3),
                                         min_value=0, max_value=30, step=1, key="s_safety_stock",
                                         help="Extra days of stock added on top of your target to account for pack size rounding and demand variability. If your target is 14 days but you're consistently landing at 11, set this to 3 to close the gap.")
+
+        _cap_on = st.checkbox(
+            "Cap coverage at reorder cycle",
+            value=st.session_state.get('s_cap_on', True), key="s_cap_on",
+            help=(
+                "Stops the app ordering more stock than you can actually sell before your next "
+                "delivery lands.\n\n"
+                "Without this, a category target of 30 days means a 30-day order even though you "
+                "reorder every 11 — so you buy roughly 3x what you need and tie up cash.\n\n"
+                "With it on, no item is ordered beyond the cap, no matter what its category target says. "
+                "The cap is the TOTAL days ordered, safety stock included."
+            )
+        )
+        if _cap_on:
+            coverage_cap = st.number_input(
+                "Max days of supply to order", min_value=1, max_value=120, step=1,
+                value=int(st.session_state.get('s_coverage_cap', order_cycle_days)),
+                key="s_coverage_cap",
+                help="The most days of stock any single item will be ordered up to. Set this to the number of days between your deliveries."
+            )
+            if coverage_cap != order_cycle_days:
+                st.caption(f"Your delivery dates work out to a **{order_cycle_days}-day** cycle.")
+                if st.button(f"↻ Match my dates ({order_cycle_days}d)", use_container_width=True, key="s_cap_sync"):
+                    st.session_state['s_coverage_cap'] = order_cycle_days
+                    st.rerun()
+            else:
+                st.caption(f"Matches your delivery dates — orders cover **{order_cycle_days} days**.")
+        else:
+            coverage_cap = None
+            st.caption("⚠️ Orders will use the full category targets below.")
 
         st.markdown("---")
         st.markdown("**Target Days of Supply**")
@@ -1548,7 +1601,7 @@ merged_raw, ocs_df = load_raw(kova_bytes_raw, ocs_bytes_raw)
 def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
             subcat_target=None, cat_size_target=None, cat_adv_modes=None,
             last_received_cutoff=None, tier_thresholds=(5, 2, 1, 0.0),
-            safety_stock=0, vel_window='30d'):
+            safety_stock=0, vel_window='30d', coverage_cap=None):
     merged = load_raw(kova_bytes, ocs_bytes)[0]
     active = merged[merged['Sales (30 Days)'] > 0].copy()
 
@@ -1609,15 +1662,22 @@ def process(kova_bytes, ocs_bytes, target, flower_size_target, budget_pretax,
             tgt = (subcat_target or {}).get((cat, _sc), target.get(cat, 14))
         else:
             tgt = target.get(cat, 14)
+        # Never buy more days of stock than we can sell before the next delivery.
+        # coverage_cap is the total days ordered, safety stock included.
+        def _days(base):
+            d = base + safety_stock
+            return min(d, coverage_cap) if coverage_cap else d
+
         if tier == 'A':
-            needed = max(0, math.ceil(dv * (tgt + safety_stock)) - avail)
+            needed = max(0, math.ceil(dv * _days(tgt)) - avail)
             cases  = math.ceil(needed / pack) if needed > 0 else 0
         elif tier == 'B':
-            if dl >= 10 + safety_stock: return 0, 0, tier
-            needed = max(0, math.ceil(dv * (10 + safety_stock)) - avail)
+            _db = _days(10)
+            if dl >= _db: return 0, 0, tier
+            needed = max(0, math.ceil(dv * _db) - avail)
             cases  = math.ceil(needed / pack) if needed > 0 else 0
         elif tier == 'C':
-            if dl >= 5 + safety_stock and ins > 0: return 0, 0, tier
+            if dl >= _days(5) and ins > 0: return 0, 0, tier
             cases = 1
         else:
             if ins > 0 or row['On Order'] > 0: return 0, 0, tier
@@ -1652,7 +1712,7 @@ _lrc_serial = {(f"{k[0]}||{k[1]}" if isinstance(k, tuple) else k): v
                for k, v in LAST_RECEIVED_CUTOFF.items()}
 _TIER_THRESHOLDS = (tier_a, tier_b, tier_c, tier_d)
 _VEL_WINDOW_MAP = {'30d':'30d','7d':'7d','Blended':'blended'}
-order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial, _TIER_THRESHOLDS, safety_stock, _VEL_WINDOW_MAP[vel_window])
+order_df, deferred_df, all_active = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, budget_pretax, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial, _TIER_THRESHOLDS, safety_stock, _VEL_WINDOW_MAP[vel_window], coverage_cap)
 
 def _add_risk(df, lead_time, order_cycle):
     if df.empty:
@@ -2068,7 +2128,20 @@ with tab2:
     st.markdown("### 📋 Suggested Order")
     st.caption("All items that need restocking based on velocity — no hard budget cap. Review the total before submitting.")
 
-    uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial, _TIER_THRESHOLDS, safety_stock, _VEL_WINDOW_MAP[vel_window])
+    if coverage_cap:
+        st.caption(
+            f"🎯 Coverage capped at **{coverage_cap} days** — no item is ordered beyond what sells "
+            f"before your next delivery, regardless of its category target. "
+            f"Change this under **Days of Supply** in the sidebar."
+        )
+    else:
+        st.caption("⚠️ Coverage cap is **off** — orders use the full category targets, which may be far longer than your reorder cycle.")
+
+    _dupes = st.session_state.get('_ocs_dupes_collapsed', 0)
+    if _dupes:
+        st.caption(f"ℹ️ Collapsed **{_dupes}** duplicate variant row(s) in the OCS catalogue so SKUs aren't counted twice.")
+
+    uncapped_df, _, _ = process(kova_bytes_raw, ocs_bytes_raw, TARGET, FLOWER_SIZE_TARGET, 999_999_999, SUBCAT_TARGET, CAT_SIZE_TARGET, CAT_ADV_MODES, _lrc_serial, _TIER_THRESHOLDS, safety_stock, _VEL_WINDOW_MAP[vel_window], coverage_cap)
     uncapped_df = _add_risk(uncapped_df, lead_time_days, order_cycle_days)
 
     if uncapped_df.empty:
