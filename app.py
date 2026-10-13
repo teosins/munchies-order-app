@@ -1589,7 +1589,7 @@ if not kova_file or not ocs_file:
     """)
     st.stop()
 
-tab1, tab2, tab3, tab4 = st.tabs(["📦 Replenishment Order", "📋 Suggested Order", "🗂️ Menu Builder", "🧠 AI Menu"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📦 Replenishment Order", "📋 Suggested Order", "🗂️ Menu Builder", "🧠 AI Menu", "⚖️ Balanced Order"])
 
 
 kova_bytes_raw = kova_file.getvalue()
@@ -3469,3 +3469,224 @@ with tab4:
                 file_name=f'DeadStock_{_today4.strftime("%Y%m%d")}.xlsx',
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             )
+
+# ══════════════════════════════════════════════════════════════════════════
+# TAB 5 — BALANCED ORDER (max variety per dollar)
+# ══════════════════════════════════════════════════════════════════════════
+with tab5:
+    _today5 = date.today()
+    st.markdown("### ⚖️ Balanced Order")
+    st.caption(
+        "The widest possible variety for the least money. Instead of ordering deep on a few fast movers, "
+        "this buys one case of as many different SKUs as it can, taking turns across every category so "
+        "nothing gets starved."
+    )
+
+    _pool_src = globals().get('uncapped_df', pd.DataFrame())
+
+    if _pool_src.empty:
+        st.success("✅ Nothing needs restocking right now — no balanced order to build.")
+    else:
+        _bal_cats_all = sorted(_pool_src['Classification'].dropna().unique().tolist())
+
+        _bc1, _bc2 = st.columns([1, 1])
+        with _bc1:
+            _bal_budget = st.number_input(
+                "Budget ($ pre-tax)", min_value=100, max_value=1_000_000, step=500,
+                value=int(st.session_state.get('s_bal_budget', int(budget_pretax) if budget_pretax < 999_999 else 10000)),
+                key="s_bal_budget",
+                help="How much you want to spend on this order, before tax and shipping."
+            )
+        with _bc2:
+            _bal_deepen = st.checkbox(
+                "Spend leftover budget on best sellers",
+                value=st.session_state.get('s_bal_deepen', True), key="s_bal_deepen",
+                help=(
+                    "After every SKU that fits has one case, any money left over is used to add extra "
+                    "cases to your fastest movers — so you get breadth first, then depth where it pays."
+                )
+            )
+
+        _bal_cats = st.multiselect(
+            "Categories to include", _bal_cats_all, default=_bal_cats_all, key="s_bal_cats",
+            help="Uncheck a category to keep this order out of it entirely."
+        )
+
+        _cands = _pool_src[_pool_src['Classification'].isin(_bal_cats)].copy()
+
+        if _cands.empty:
+            st.warning("No items match the selected categories.")
+        else:
+            # Cost of a single case, and sales-per-dollar efficiency
+            _cands['_case_cost'] = (_cands['Pack Size'].fillna(1) * _cands['Unit Price'].fillna(0)).round(2)
+            _cands = _cands[_cands['_case_cost'] > 0].copy()
+
+            if _cands.empty:
+                st.warning("No items with pricing available to build an order from.")
+            else:
+                # Units sold per day per dollar invested — higher means more sales per dollar
+                _cands['_score'] = _cands['Daily Vel'].fillna(0) / _cands['_case_cost']
+
+                # ── pass 1: breadth — one case each, taking turns across categories ──
+                _by_cat = {}
+                for _c, _grp in _cands.sort_values('_score', ascending=False).groupby('Classification'):
+                    _by_cat[_c] = _grp.to_dict('records')
+
+                _turn_cats = sorted(_by_cat.keys())
+                _ptr = {_c: 0 for _c in _turn_cats}
+                _picked, _spent = [], 0.0
+
+                while True:
+                    _moved = False
+                    for _c in _turn_cats:
+                        if _ptr[_c] >= len(_by_cat[_c]):
+                            continue
+                        _row = _by_cat[_c][_ptr[_c]]
+                        _ptr[_c] += 1          # always advance, so this terminates
+                        _moved = True
+                        if _spent + _row['_case_cost'] <= _bal_budget:
+                            _r = dict(_row)
+                            # what depth mode would have ordered — the ceiling for pass 2
+                            _r['_max_cases'] = max(1, int(_row.get('Cases', 1) or 1))
+                            _r['Cases'] = 1
+                            _picked.append(_r)
+                            _spent += _row['_case_cost']
+                    if not _moved:
+                        break
+
+                _breadth_skus = len(_picked)
+                _breadth_cost = _spent
+
+                # ── pass 2: depth — leftover budget goes to the fastest movers ──
+                _extra_cases = 0
+                if _bal_deepen and _picked:
+                    # fastest movers first, never past what depth mode would have ordered
+                    _deep = sorted(_picked, key=lambda r: r.get('Daily Vel', 0) or 0, reverse=True)
+                    _added = True
+                    while _added:
+                        _added = False
+                        for _p in _deep:
+                            if _p['Cases'] >= _p['_max_cases']:
+                                continue
+                            if _spent + _p['_case_cost'] <= _bal_budget:
+                                _p['Cases'] += 1
+                                _spent += _p['_case_cost']
+                                _extra_cases += 1
+                                _added = True
+
+                _bal_df = pd.DataFrame(_picked)
+                _bal_df['Est. Cost'] = (_bal_df['Cases'] * _bal_df['_case_cost']).round(2)
+                _bal_df = _bal_df.sort_values(['Classification', '_score'], ascending=[True, False])
+
+                _total_cost = float(_bal_df['Est. Cost'].sum())
+                _n_skus     = len(_bal_df)
+                _n_cats     = _bal_df['Classification'].nunique()
+                _cost_per   = _total_cost / _n_skus if _n_skus else 0
+
+                # ── how the current (depth-first) order would spend the same money ──
+                _d = _cands.copy()
+                _d['_tp'] = _d['Tier'].map({'A': 0, 'B': 1, 'C': 2, 'D': 3}).fillna(9)
+                _d = _d.sort_values(['_tp', 'Days Left'])
+                _dspent, _dskus = 0.0, 0
+                for _, _dr in _d.iterrows():
+                    _dc = float(_dr.get('Est Cost') or 0)
+                    if _dc <= 0:
+                        continue
+                    if _dspent + _dc <= _bal_budget:
+                        _dspent += _dc
+                        _dskus += 1
+                _d_cost_per = _dspent / _dskus if _dskus else 0
+
+                st.markdown("---")
+                _m1, _m2, _m3, _m4 = st.columns(4)
+                _m1.metric("SKUs in Order",   f"{_n_skus}",
+                           delta=f"+{_n_skus - _dskus} vs depth" if _n_skus > _dskus else None)
+                _m2.metric("Categories",      f"{_n_cats}")
+                _m3.metric("Total Cost",      f"${_total_cost:,.2f}")
+                _m4.metric("Cost per SKU",    f"${_cost_per:,.2f}",
+                           delta=f"-${_d_cost_per - _cost_per:,.0f} vs depth" if _d_cost_per > _cost_per else None,
+                           delta_color="inverse")
+
+                if _dskus:
+                    st.info(
+                        f"**Same ${_bal_budget:,} spent two ways** — "
+                        f"your normal depth-first order buys **{_dskus} SKUs** at **${_d_cost_per:,.2f}** each. "
+                        f"This balanced order buys **{_n_skus} SKUs** at **${_cost_per:,.2f}** each"
+                        + (f", then adds **{_extra_cases}** extra cases to your best sellers with what's left over."
+                           if _extra_cases else ".")
+                    )
+
+                # ── per-category breakdown ──
+                _cat_bd = _bal_df.groupby('Classification').agg(
+                    SKUs=('Supplier Sku', 'count'),
+                    Cases=('Cases', 'sum'),
+                    Cost=('Est. Cost', 'sum'),
+                ).reset_index().sort_values('Cost', ascending=False)
+                _cat_bd['Share'] = (_cat_bd['Cost'] / _total_cost * 100).round(1) if _total_cost else 0
+                st.dataframe(
+                    _cat_bd.rename(columns={'Classification': 'Category', 'Cost': 'Est. Cost', 'Share': 'Share %'}),
+                    hide_index=True, use_container_width=True,
+                    column_config={
+                        'SKUs':      st.column_config.NumberColumn('SKUs',  format='%d'),
+                        'Cases':     st.column_config.NumberColumn('Cases', format='%d'),
+                        'Est. Cost': st.column_config.NumberColumn('Est. Cost', format='$%.2f'),
+                        'Share %':   st.column_config.NumberColumn('Share %',   format='%.1f%%'),
+                    }
+                )
+
+                # ── full order ──
+                st.markdown("#### 🧾 The Order")
+                _show = [c for c in ['Product', 'Classification', 'Product Size', 'Strain', 'Tier',
+                                     'Weekly Vel', 'Days Left', 'Cases', '_case_cost', 'Est. Cost']
+                         if c in _bal_df.columns]
+                _bal_show = _bal_df[_show].rename(columns={
+                    'Classification': 'Category', 'Product Size': 'Size', '_case_cost': 'Case Cost'
+                })
+                st.dataframe(
+                    _bal_show, hide_index=True, use_container_width=True,
+                    column_config={
+                        'Tier':       st.column_config.TextColumn('Tier', width='small'),
+                        'Cases':      st.column_config.NumberColumn('Cases',      format='%d', width='small'),
+                        'Weekly Vel': st.column_config.NumberColumn('Weekly Vel', format='%.2f'),
+                        'Days Left':  st.column_config.NumberColumn('Days Left',  format='%.1f'),
+                        'Case Cost':  st.column_config.NumberColumn('Case Cost',  format='$%.2f'),
+                        'Est. Cost':  st.column_config.NumberColumn('Est. Cost',  format='$%.2f'),
+                    }
+                )
+
+                # ── downloads ──
+                _bal_rep = io.BytesIO()
+                with pd.ExcelWriter(_bal_rep, engine='openpyxl') as _bw:
+                    _bal_show.to_excel(_bw, sheet_name='Balanced Order', index=False)
+                    _cat_bd.rename(columns={'Classification': 'Category'}).to_excel(
+                        _bw, sheet_name='Category Breakdown', index=False)
+                _bal_rep.seek(0)
+
+                _bal_ocs = io.BytesIO()
+                if 'Supplier Sku' in _bal_df.columns:
+                    _bal_up = (_bal_df[['Supplier Sku', 'Cases']]
+                               .groupby('Supplier Sku', as_index=False)['Cases'].sum()
+                               .rename(columns={'Supplier Sku': 'SKU', 'Cases': 'Quantity'}))
+                    with pd.ExcelWriter(_bal_ocs, engine='openpyxl') as _bow:
+                        _bal_up.to_excel(_bow, sheet_name='MasterCatalogue', index=False)
+                _bal_ocs.seek(0)
+
+                _dl1, _dl2 = st.columns(2)
+                _dl1.download_button(
+                    "📥 Download Balanced Order (.xlsx)", data=_bal_rep,
+                    file_name=f'BalancedOrder_{_today5.strftime("%Y%m%d")}.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True,
+                )
+                _dl2.download_button(
+                    "📤 Upload to OCS (.xlsx)", data=_bal_ocs,
+                    file_name=f'OCS_Balanced_{_today5.strftime("%Y%m%d")}.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True,
+                    help="SKU + Quantity only — import straight into the OCS portal.",
+                )
+                st.caption(
+                    f"**{_n_skus} SKUs** · **{int(_bal_df['Cases'].sum())} cases** · "
+                    f"**${_total_cost:,.2f}** of your ${_bal_budget:,} budget "
+                    f"(${_bal_budget - _total_cost:,.2f} unspent)"
+                )
