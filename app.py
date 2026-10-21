@@ -1589,7 +1589,7 @@ if not kova_file or not ocs_file:
     """)
     st.stop()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📦 Replenishment Order", "📋 Suggested Order", "🗂️ Menu Builder", "🧠 AI Menu", "⚖️ Balanced Order"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📦 Replenishment Order", "📋 Suggested Order", "🗂️ Menu Builder", "🧠 AI Menu", "⚖️ Balanced Order", "🧺 Combine Orders"])
 
 
 kova_bytes_raw = kova_file.getvalue()
@@ -3690,3 +3690,261 @@ with tab5:
                     f"**${_total_cost:,.2f}** of your ${_bal_budget:,} budget "
                     f"(${_bal_budget - _total_cost:,.2f} unspent)"
                 )
+
+# ══════════════════════════════════════════════════════════════════════════
+# TAB 6 — COMBINE ORDERS (one upload file from several sources)
+# ══════════════════════════════════════════════════════════════════════════
+with tab6:
+    _today6 = date.today()
+    st.markdown("### 🧺 Combine Orders")
+    st.caption(
+        "Merge a restock order with your menu additions into a single OCS upload. "
+        "If the same SKU shows up in more than one place it's listed once, at the larger case count — "
+        "never added together."
+    )
+
+    def _norm_order(src, label, sku_col='Supplier Sku'):
+        """Flatten any order source into one common shape."""
+        if src is None or (hasattr(src, 'empty') and src.empty):
+            return pd.DataFrame()
+        _d = src.copy()
+        _cat  = 'Classification' if 'Classification' in _d.columns else ('Category' if 'Category' in _d.columns else None)
+        _size = 'Product Size'   if 'Product Size'   in _d.columns else ('Size'     if 'Size'     in _d.columns else None)
+        if sku_col not in _d.columns or 'Cases' not in _d.columns:
+            return pd.DataFrame()
+        return pd.DataFrame({
+            'SKU':        _d[sku_col].astype(str),
+            'Product':    _d['Product']  if 'Product' in _d.columns else '',
+            'Category':   _d[_cat]       if _cat  else '',
+            'Size':       _d[_size]      if _size else '',
+            'Strain':     _d['Strain']   if 'Strain' in _d.columns else '',
+            'Cases':      pd.to_numeric(_d['Cases'], errors='coerce').fillna(0).astype(int),
+            'Unit Price': pd.to_numeric(_d['Unit Price'], errors='coerce').fillna(0) if 'Unit Price' in _d.columns else 0.0,
+            'Pack Size':  pd.to_numeric(_d['Pack Size'],  errors='coerce').fillna(1).astype(int) if 'Pack Size' in _d.columns else 1,
+            'Source':     label,
+        })
+
+    @st.cache_data(show_spinner=False)
+    def _parse_ocs_cart(_bytes):
+        """Read an OCS 'Export Cart' file. It contains the whole catalogue, so
+        only rows with Quantity > 0 are actually in the cart."""
+        _c = pd.read_excel(io.BytesIO(_bytes), sheet_name=0)
+        _c.columns = [str(_x).strip() for _x in _c.columns]
+        def _find(*names):
+            for _n in names:
+                for _col in _c.columns:
+                    if _col.lower() == _n.lower():
+                        return _col
+            return None
+        _sku_c, _qty_c = _find('SKU', 'OCS Variant Number'), _find('Quantity', 'Qty')
+        if not _sku_c or not _qty_c:
+            raise ValueError(f"Couldn't find SKU and Quantity columns. Found: {list(_c.columns)[:12]}")
+        _c[_qty_c] = pd.to_numeric(_c[_qty_c], errors='coerce').fillna(0)
+        _c = _c[_c[_qty_c] > 0].copy()
+        _price_c, _pack_c = _find('UnitPrice', 'Unit Price'), _find('PackSize', 'Pack Size')
+        return pd.DataFrame({
+            'Supplier Sku': _c[_sku_c].astype(str).str.strip(),
+            'Product':      _c[_find('ItemName', 'Product', 'Product Name')] if _find('ItemName', 'Product', 'Product Name') else '',
+            'Classification': _c[_find('Sub Category', 'Category', 'ProductType')] if _find('Sub Category', 'Category', 'ProductType') else '',
+            'Product Size': _c[_find('Size')] if _find('Size') else '',
+            'Strain':       _c[_find('Plant Type', 'Strain')] if _find('Plant Type', 'Strain') else '',
+            'Cases':        _c[_qty_c].astype(int),
+            'Unit Price':   pd.to_numeric(_c[_price_c], errors='coerce').fillna(0) if _price_c else 0.0,
+            'Pack Size':    pd.to_numeric(_c[_pack_c], errors='coerce').fillna(1).astype(int) if _pack_c else 1,
+        })
+
+    # ── gather whatever each tab produced this run ──
+    _src_repl = globals().get('filtered_df', globals().get('order_df'))
+    _src_sugg = globals().get('uncapped_df')
+    _src_bal  = globals().get('_bal_df')
+    _src_ai   = globals().get('_am_gaps')
+
+    _cart_raw = st.session_state.get('menu_cart', {})
+    _src_menu = pd.DataFrame()
+    if _cart_raw:
+        _src_menu = pd.DataFrame([{**v, 'Supplier Sku': k} for k, v in _cart_raw.items()])
+
+    def _count(df):
+        return 0 if df is None or (hasattr(df, 'empty') and df.empty) else len(df)
+
+    _base_opts, _base_map = [], {}
+    for _lbl, _df in [("Replenishment Order", _src_repl),
+                      ("Suggested Order",     _src_sugg),
+                      ("Balanced Order",      _src_bal)]:
+        if _count(_df):
+            _o = f"{_lbl} — {_count(_df)} SKUs"
+            _base_opts.append(_o); _base_map[_o] = (_lbl, _df)
+    _base_opts.append("None — menu additions only")
+
+    st.markdown("**1. Pick your restock order**")
+    st.caption("These are three different strategies for the same restock, so only one can be the base.")
+    _base_choice = st.radio("Base order", _base_opts, key="s_comb_base", label_visibility="collapsed")
+
+    st.markdown("**2. Add menu items on top**")
+    _add_c1, _add_c2 = st.columns(2)
+    _use_menu = _add_c1.checkbox(
+        f"Menu Builder cart ({_count(_src_menu)} SKUs)",
+        value=bool(_count(_src_menu)), key="s_comb_menu", disabled=not _count(_src_menu),
+        help="The SKUs you added to the cart on the Menu Builder tab.")
+    _use_ai = _add_c2.checkbox(
+        f"AI Menu order list ({_count(_src_ai)} SKUs)",
+        value=bool(_count(_src_ai)), key="s_comb_ai", disabled=not _count(_src_ai),
+        help="Missing and selling-out SKUs from the AI Menu tab.")
+
+    st.markdown("**3. Keep what's already in your OCS cart**")
+    st.caption(
+        "⚠️ OCS **replaces your entire cart** when you import a file — anything you picked by hand is lost. "
+        "In OCS go to your cart → **Export Cart** (choose **Packs**), then drop that file here and it gets "
+        "merged in instead of wiped."
+    )
+    _cart_file = st.file_uploader(
+        "OCS cart export (.xlsx)", type="xlsx", key="s_comb_cartfile",
+        help="The file OCS gives you from Export Cart. Only rows with a quantity are treated as cart items.")
+
+    _src_ocs, _cart_err = pd.DataFrame(), None
+    if _cart_file is not None:
+        try:
+            _src_ocs = _parse_ocs_cart(_cart_file.getvalue())
+        except Exception as _ce:
+            _cart_err = str(_ce)
+
+    if _cart_err:
+        st.error(f"Couldn't read that cart file: {_cart_err}")
+    elif not _src_ocs.empty:
+        _ocs_val = float((_src_ocs['Cases'] * _src_ocs['Pack Size'] * _src_ocs['Unit Price']).sum())
+        st.success(
+            f"✅ Found **{len(_src_ocs)} SKUs** in your cart "
+            f"(**{int(_src_ocs['Cases'].sum())} packs**, ~**${_ocs_val:,.2f}**) — these will be protected."
+        )
+        if 'each' in _cart_file.name.lower():
+            st.warning(
+                "That file looks like an **Eaches** export. Fillrate counts in **packs/cases**, so quantities "
+                "may be wrong. Re-export from OCS with **Packs** selected."
+            )
+
+    _conflict = st.radio(
+        "If a SKU is in both your cart and the Fillrate order",
+        ["Keep the higher quantity", "Your OCS cart wins", "Add them together"],
+        horizontal=True, key="s_comb_conflict",
+        help=(
+            "**Keep the higher quantity** — safest default, never reduces anything.\n\n"
+            "**Your OCS cart wins** — your manual pick always stands.\n\n"
+            "**Add them together** — only if the two orders are genuinely separate buys."
+        )
+    )
+
+    _frames = []
+    if _base_choice in _base_map:
+        _bl, _bdf = _base_map[_base_choice]
+        _frames.append(_norm_order(_bdf, _bl))
+    if _use_menu and _count(_src_menu):
+        _frames.append(_norm_order(_src_menu, "Menu Builder"))
+    if _use_ai and _count(_src_ai):
+        _frames.append(_norm_order(_src_ai, "AI Menu"))
+    if not _src_ocs.empty:
+        _frames.append(_norm_order(_src_ocs, "OCS Cart"))
+
+    _frames = [f for f in _frames if not f.empty]
+
+    if not _frames:
+        st.info("Nothing selected yet — pick a restock order above, or add items on the Menu Builder or AI Menu tabs.")
+    else:
+        _all = pd.concat(_frames, ignore_index=True)
+        _all = _all[_all['Cases'] > 0]
+
+        if _all.empty:
+            st.info("The selected sources have no items with cases to order.")
+        else:
+            # One row per SKU, combined according to the chosen conflict rule
+            _qty_fn = 'sum' if _conflict.startswith('Add') else 'max'
+            _comb = _all.groupby('SKU', as_index=False).agg(
+                Product=('Product', 'first'),
+                Category=('Category', 'first'),
+                Size=('Size', 'first'),
+                Strain=('Strain', 'first'),
+                Cases=('Cases', _qty_fn),
+                **{'Unit Price': ('Unit Price', 'max'), 'Pack Size': ('Pack Size', 'max')},
+                Source=('Source', lambda s: ' + '.join(sorted(set(s)))),
+            )
+            if _conflict.startswith('Your OCS cart') and not _src_ocs.empty:
+                _cart_q = dict(zip(_src_ocs['Supplier Sku'].astype(str), _src_ocs['Cases']))
+                _comb['Cases'] = [int(_cart_q.get(s, c)) for s, c in zip(_comb['SKU'], _comb['Cases'])]
+            _comb['Est. Cost'] = (_comb['Cases'] * _comb['Pack Size'] * _comb['Unit Price']).round(2)
+            _comb = _comb.sort_values(['Category', 'Product'])
+
+            _overlap = int(_comb['Source'].str.contains(r' \+ ').sum())
+            _raw_rows = len(_all)
+            _total    = float(_comb['Est. Cost'].sum())
+
+            st.markdown("---")
+            _k1, _k2, _k3, _k4 = st.columns(4)
+            _k1.metric("Unique SKUs", f"{len(_comb)}",
+                       delta=f"-{_raw_rows - len(_comb)} merged" if _raw_rows > len(_comb) else None)
+            _k2.metric("Total Cases", f"{int(_comb['Cases'].sum()):,}")
+            _k3.metric("Pre-Tax Total", f"${_total:,.2f}")
+            _k4.metric("In Both Lists", f"{_overlap}")
+
+            if _overlap:
+                st.caption(
+                    f"**{_overlap} SKU(s)** appeared in more than one source. Each is listed once at the "
+                    f"higher case count — look for a `+` in the Source column."
+                )
+
+            try:
+                _bud = float(budget_pretax)
+                if _bud and _bud < 999_999:
+                    if _total > _bud:
+                        st.warning(f"⚠️ ${_total - _bud:,.2f} over your ${_bud:,.0f} budget.")
+                    else:
+                        st.success(f"✅ ${_bud - _total:,.2f} under your ${_bud:,.0f} budget.")
+            except Exception:
+                pass
+
+            _by_src = _comb.groupby('Source', as_index=False).agg(
+                SKUs=('SKU', 'count'), Cases=('Cases', 'sum'),
+                **{'Est. Cost': ('Est. Cost', 'sum')})
+            st.dataframe(
+                _by_src.sort_values('Est. Cost', ascending=False), hide_index=True, use_container_width=True,
+                column_config={
+                    'SKUs':      st.column_config.NumberColumn('SKUs',  format='%d'),
+                    'Cases':     st.column_config.NumberColumn('Cases', format='%d'),
+                    'Est. Cost': st.column_config.NumberColumn('Est. Cost', format='$%.2f'),
+                })
+
+            st.markdown("#### 🧾 Combined Order")
+            _comb_show = _comb[['Product', 'Category', 'Size', 'Strain', 'Cases', 'Unit Price', 'Est. Cost', 'Source']]
+            st.dataframe(
+                _comb_show, hide_index=True, use_container_width=True,
+                column_config={
+                    'Cases':      st.column_config.NumberColumn('Cases', format='%d', width='small'),
+                    'Unit Price': st.column_config.NumberColumn('Unit Price', format='$%.2f'),
+                    'Est. Cost':  st.column_config.NumberColumn('Est. Cost',  format='$%.2f'),
+                    'Source':     st.column_config.TextColumn('Source', width='medium'),
+                })
+
+            _cmb_rep = io.BytesIO()
+            with pd.ExcelWriter(_cmb_rep, engine='openpyxl') as _cw:
+                _comb[['SKU', 'Product', 'Category', 'Size', 'Strain', 'Cases',
+                       'Unit Price', 'Est. Cost', 'Source']].to_excel(
+                    _cw, sheet_name='Combined Order', index=False)
+                _by_src.to_excel(_cw, sheet_name='By Source', index=False)
+            _cmb_rep.seek(0)
+
+            _cmb_ocs = io.BytesIO()
+            with pd.ExcelWriter(_cmb_ocs, engine='openpyxl') as _cow:
+                _comb[['SKU', 'Cases']].rename(columns={'Cases': 'Quantity'}).to_excel(
+                    _cow, sheet_name='MasterCatalogue', index=False)
+            _cmb_ocs.seek(0)
+
+            _cd1, _cd2 = st.columns(2)
+            _cd1.download_button(
+                "📥 Download Combined Order (.xlsx)", data=_cmb_rep,
+                file_name=f'CombinedOrder_{_today6.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True)
+            _cd2.download_button(
+                "📤 Upload to OCS (.xlsx)", data=_cmb_ocs,
+                file_name=f'OCS_Combined_{_today6.strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+                help="One file, every SKU deduped — import straight into the OCS portal.")
