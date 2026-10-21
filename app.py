@@ -3512,10 +3512,46 @@ with tab5:
             help="Uncheck a category to keep this order out of it entirely."
         )
 
-        _cands = _pool_src[_pool_src['Classification'].isin(_bal_cats)].copy()
+        _bt_opts = {
+            'A': f'A — Fast ({tier_a}+/wk)',
+            'B': f'B — Mid ({tier_b}–{tier_a-1}/wk)',
+            'C': f'C — Slow ({tier_c}–{tier_b-1}/wk)',
+            'D': f'D — Very Slow ({tier_d}–{tier_c-1}/wk)',
+        }
+        _bf1, _bf2 = st.columns([1.3, 1])
+        with _bf1:
+            _bal_tier_lbls = st.multiselect(
+                "Movement tiers to include", list(_bt_opts.values()), default=list(_bt_opts.values()),
+                key="s_bal_tiers",
+                help="Drop C and D to keep slow movers out of this order entirely, or select only C and D to do a dedicated slow-mover refresh."
+            )
+        with _bf2:
+            _bal_risk = st.selectbox(
+                "Stockout risk", ["All", "At Risk or Critical", "Critical only"],
+                index=["All", "At Risk or Critical", "Critical only"].index(
+                    st.session_state.get('s_bal_risk', 'All')),
+                key="s_bal_risk",
+                help=f"Critical = sells out before this order lands (<{lead_time_days}d of stock). At Risk = sells out before your next order arrives (<{lead_time_days+order_cycle_days}d)."
+            )
+
+        _bal_tiers = [_k for _k, _v in _bt_opts.items() if _v in _bal_tier_lbls]
+
+        _bal_prio = st.checkbox(
+            "Fill at-risk items first", value=st.session_state.get('s_bal_prio', True), key="s_bal_prio",
+            help="Gives Critical and At Risk items the first pick in every category before anything else, so urgent gaps get covered even if the budget runs out."
+        )
+
+        _cands = _pool_src[
+            _pool_src['Classification'].isin(_bal_cats) &
+            _pool_src['Tier'].isin(_bal_tiers)
+        ].copy()
+        if _bal_risk == "Critical only":
+            _cands = _cands[_cands['Risk'] == 'Critical']
+        elif _bal_risk == "At Risk or Critical":
+            _cands = _cands[_cands['Risk'].isin(['Critical', 'At Risk'])]
 
         if _cands.empty:
-            st.warning("No items match the selected categories.")
+            st.warning("No items match the selected categories, tiers and risk level.")
         else:
             # Cost of a single case, and sales-per-dollar efficiency
             _cands['_case_cost'] = (_cands['Pack Size'].fillna(1) * _cands['Unit Price'].fillna(0)).round(2)
@@ -3527,9 +3563,15 @@ with tab5:
                 # Units sold per day per dollar invested — higher means more sales per dollar
                 _cands['_score'] = _cands['Daily Vel'].fillna(0) / _cands['_case_cost']
 
+                # Urgency band: Critical first, then At Risk, then everything else
+                if _bal_prio and 'Risk' in _cands.columns:
+                    _cands['_urg'] = _cands['Risk'].map({'Critical': 0, 'At Risk': 1}).fillna(2).astype(int)
+                else:
+                    _cands['_urg'] = 0
+
                 # ── pass 1: breadth — one case each, taking turns across categories ──
                 _by_cat = {}
-                for _c, _grp in _cands.sort_values('_score', ascending=False).groupby('Classification'):
+                for _c, _grp in _cands.sort_values(['_urg', '_score'], ascending=[True, False]).groupby('Classification'):
                     _by_cat[_c] = _grp.to_dict('records')
 
                 _turn_cats = sorted(_by_cat.keys())
@@ -3636,7 +3678,12 @@ with tab5:
 
                 # ── full order ──
                 st.markdown("#### 🧾 The Order")
-                _show = [c for c in ['Product', 'Classification', 'Product Size', 'Strain', 'Tier',
+                if 'Risk' in _bal_df.columns:
+                    _rk = _bal_df['Risk'].value_counts()
+                    _rk_bits = [f"**{int(_rk[_r])}** {_r}" for _r in ['Critical', 'At Risk', 'Stable'] if _r in _rk]
+                    if _rk_bits:
+                        st.caption("Risk mix in this order: " + " · ".join(_rk_bits))
+                _show = [c for c in ['Product', 'Classification', 'Product Size', 'Strain', 'Tier', 'Risk',
                                      'Weekly Vel', 'Days Left', 'Cases', '_case_cost', 'Est. Cost']
                          if c in _bal_df.columns]
                 _bal_show = _bal_df[_show].rename(columns={
@@ -3646,6 +3693,7 @@ with tab5:
                     _bal_show, hide_index=True, use_container_width=True,
                     column_config={
                         'Tier':       st.column_config.TextColumn('Tier', width='small'),
+                        'Risk':       st.column_config.TextColumn('Risk', width='small'),
                         'Cases':      st.column_config.NumberColumn('Cases',      format='%d', width='small'),
                         'Weekly Vel': st.column_config.NumberColumn('Weekly Vel', format='%.2f'),
                         'Days Left':  st.column_config.NumberColumn('Days Left',  format='%.1f'),
@@ -3718,6 +3766,8 @@ with tab6:
             'Category':   _d[_cat]       if _cat  else '',
             'Size':       _d[_size]      if _size else '',
             'Strain':     _d['Strain']   if 'Strain' in _d.columns else '',
+            'Tier':       _d['Tier']     if 'Tier' in _d.columns else '—',
+            'Risk':       _d['Risk']     if 'Risk' in _d.columns else '—',
             'Cases':      pd.to_numeric(_d['Cases'], errors='coerce').fillna(0).astype(int),
             'Unit Price': pd.to_numeric(_d['Unit Price'], errors='coerce').fillna(0) if 'Unit Price' in _d.columns else 0.0,
             'Pack Size':  pd.to_numeric(_d['Pack Size'],  errors='coerce').fillna(1).astype(int) if 'Pack Size' in _d.columns else 1,
@@ -3852,6 +3902,41 @@ with tab6:
         _all = pd.concat(_frames, ignore_index=True)
         _all = _all[_all['Cases'] > 0]
 
+        # ── 4. trim the restock side by tier / risk ──
+        # Hand-picked sources (your OCS cart, Menu Builder) are deliberate choices,
+        # so they're never filtered out — only the velocity-driven ones are.
+        _PROTECTED = {'OCS Cart', 'Menu Builder'}
+        _algo_mask = ~_all['Source'].isin(_PROTECTED)
+
+        if _algo_mask.any():
+            with st.expander("**4. Trim the restock order by tier / risk** (optional)", expanded=False):
+                st.caption(
+                    "Applies to the restock and AI Menu items only. Your OCS cart and Menu Builder "
+                    "picks are always kept — those are deliberate choices, not suggestions."
+                )
+                _ct1, _ct2 = st.columns([1.3, 1])
+                _avail_tiers = sorted([t for t in _all.loc[_algo_mask, 'Tier'].dropna().unique() if t != '—'])
+                with _ct1:
+                    _ctiers = st.multiselect(
+                        "Movement tiers", _avail_tiers, default=_avail_tiers, key="s_comb_tiers",
+                        help="A = fast, D = very slow. Drop C/D to leave slow movers out of this order.")
+                with _ct2:
+                    _crisk = st.selectbox(
+                        "Stockout risk", ["All", "At Risk or Critical", "Critical only"],
+                        key="s_comb_risk",
+                        help="Limit the restock side to items that will actually run out soon.")
+
+                _keep = _algo_mask & _all['Tier'].isin(_ctiers)
+                if _crisk == "Critical only":
+                    _keep &= _all['Risk'].eq('Critical')
+                elif _crisk == "At Risk or Critical":
+                    _keep &= _all['Risk'].isin(['Critical', 'At Risk'])
+
+                _dropped = int((_algo_mask & ~_keep).sum())
+                _all = _all[_keep | ~_algo_mask].copy()
+                if _dropped:
+                    st.caption(f"Trimmed **{_dropped}** restock line(s). Protected picks untouched.")
+
         if _all.empty:
             st.info("The selected sources have no items with cases to order.")
         else:
@@ -3862,6 +3947,8 @@ with tab6:
                 Category=('Category', 'first'),
                 Size=('Size', 'first'),
                 Strain=('Strain', 'first'),
+                Tier=('Tier', 'first'),
+                Risk=('Risk', 'first'),
                 Cases=('Cases', _qty_fn),
                 **{'Unit Price': ('Unit Price', 'max'), 'Pack Size': ('Pack Size', 'max')},
                 Source=('Source', lambda s: ' + '.join(sorted(set(s)))),
@@ -3912,10 +3999,13 @@ with tab6:
                 })
 
             st.markdown("#### 🧾 Combined Order")
-            _comb_show = _comb[['Product', 'Category', 'Size', 'Strain', 'Cases', 'Unit Price', 'Est. Cost', 'Source']]
+            _comb_show = _comb[['Product', 'Category', 'Size', 'Strain', 'Tier', 'Risk',
+                                'Cases', 'Unit Price', 'Est. Cost', 'Source']]
             st.dataframe(
                 _comb_show, hide_index=True, use_container_width=True,
                 column_config={
+                    'Tier':       st.column_config.TextColumn('Tier', width='small'),
+                    'Risk':       st.column_config.TextColumn('Risk', width='small'),
                     'Cases':      st.column_config.NumberColumn('Cases', format='%d', width='small'),
                     'Unit Price': st.column_config.NumberColumn('Unit Price', format='$%.2f'),
                     'Est. Cost':  st.column_config.NumberColumn('Est. Cost',  format='$%.2f'),
@@ -3924,8 +4014,8 @@ with tab6:
 
             _cmb_rep = io.BytesIO()
             with pd.ExcelWriter(_cmb_rep, engine='openpyxl') as _cw:
-                _comb[['SKU', 'Product', 'Category', 'Size', 'Strain', 'Cases',
-                       'Unit Price', 'Est. Cost', 'Source']].to_excel(
+                _comb[['SKU', 'Product', 'Category', 'Size', 'Strain', 'Tier', 'Risk',
+                       'Cases', 'Unit Price', 'Est. Cost', 'Source']].to_excel(
                     _cw, sheet_name='Combined Order', index=False)
                 _by_src.to_excel(_cw, sheet_name='By Source', index=False)
             _cmb_rep.seek(0)
